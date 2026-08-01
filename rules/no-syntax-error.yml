@@ -1,0 +1,21 @@
+id: no-syntax-error
+language: typescript
+severity: error
+message: Erro de sintaxe — o módulo não vai carregar.
+note: |
+  Um nó ERROR da árvore significa que o arquivo não parseia. Em produção isso
+  derruba o módulo inteiro; em desenvolvimento o Vite troca a página por um
+  diálogo de erro — e foi assim que metade de duas capturas enviadas para
+  revisão virou screenshot de um [PARSE_ERROR].
+
+  A causa daquele incidente foi um caractere: uma crase dentro de um comentário
+  GLSL, no meio do template literal do fragment shader do tubo
+  (`src/emulator/CrtShader.ts`). A crase fechou o literal, e o parser explodiu na
+  linha seguinte. Nenhuma regra semântica pega isso — mas o nó ERROR pega, e ele
+  aponta exatamente para o caractere culpado.
+
+  Crase e `${` são ilegais dentro de um template literal. Comentários GLSL não
+  têm por que carregar cerca de código Markdown: escreva `em CrtMonitor` sem
+  crase nenhuma.
+rule:
+  kind: ERROR

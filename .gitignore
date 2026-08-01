@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.wrangler/
+.DS_Store
+*.log
+
+# Render captures from tools/shoot.mjs — regenerable, and they add up fast.
+shots/
+
+# Scratch reference HTML dump
+reference/raw/*.html
+
+# Reference photographs whose MSX Wiki page grants no redistribution licence
+# (tagged `Self`, or no licensing section). Fetch them locally — see
+# reference/raw/CREDITS.md. The CC BY 3.0 ones are committed and credited there.
+reference/raw/CF3000_and_XP800.jpg
+reference/raw/Gradiente_expert_XP-800_keyboard_correct.jpg
+reference/raw/Gradiente_Logo_Detail.jpg
+reference/raw/Xp800easter.png
+
+# Scratch de agentes (probes efêmeros, relatórios de revisão)
+.agent-shot/
+.scratch/

@@ -1,0 +1,39 @@
+{
+  "name": "msx-expert-xp800",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Interactive 3D replica of the Gradiente Expert XP-800 (Brazilian MSX, 1985) with a real MSX emulator on a period CRT",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mneves75/msx-expert-xp800.git"
+  },
+  "homepage": "https://msx-expert-xp800.mvneves.workers.dev",
+  "bugs": "https://github.com/mneves75/msx-expert-xp800/issues",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "ast-grep scan",
+    "shoot": "node tools/shoot.mjs",
+    "verify": "pnpm lint && pnpm typecheck",
+    "deploy": "pnpm build && wrangler deploy"
+  },
+  "dependencies": {
+    "postprocessing": "6.39.3",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.0",
+    "playwright": "1.61.1",
+    "typescript": "5.9.3",
+    "vite": "8.1.5",
+    "wrangler": "4.115.0"
+  },
+  "packageManager": "pnpm@11.13.0"
+}

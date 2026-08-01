@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Typecheck, lint & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Actions pinned by commit SHA: a tag (v4, v6…) is mutable and can silently start
+      # pointing at different code — the SHA cannot.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        # Version is read from packageManager in package.json.
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: ast-grep lint
+        uses: ast-grep/action@370e627637505696e4365db4a149af9f2311afe8 # v1.4
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Built-artifact leakage scan
+        run: |
+          # Any absolute home directory in the bundle means a local path was baked in.
+          # Matches every contributor's machine, not just the one that wrote this step.
+          # -q is load-bearing: these logs are public, so printing the match would leak
+          # the very path the gate exists to keep out of the artifact.
+          if grep -rEq "/(Users|home)/[A-Za-z0-9._-]+/" dist/; then
+            echo "local paths leaked into dist/ — run the build locally to see which file"
+            exit 1
+          fi
+          test -f dist/_headers
+          test -f dist/index.html

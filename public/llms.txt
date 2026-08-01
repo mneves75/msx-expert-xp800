@@ -1,0 +1,29 @@
+# Gradiente Expert XP-800 — Réplica 3D Interativa
+
+> Réplica 3D fotorrealista e interativa do Gradiente Expert XP-800, o computador MSX
+> brasileiro de 1985, rodando no navegador em Three.js. Ligue a máquina, digite num
+> prompt MSX BASIC funcional e insira cartuchos — inserir um cartucho promove a tela
+> para um emulador MSX real (WebMSX + C-BIOS), exibido num monitor CRT simulado com
+> fósforo, scanlines e aquecimento de tubo.
+
+Página única, sem backend e sem coleta de dados. Todo o conteúdo 3D (malhas e
+texturas) é gerado proceduralmente em código — nenhum asset é baixado. O emulador
+WebMSX é carregado em runtime de CDN (jsDelivr), fixado por commit e verificado por
+SRI, apenas quando há cartucho para rodar.
+
+## Interações
+
+- Ligar/desligar a máquina; com slots vazios abre o prompt MSX BASIC interno
+- Inserir/ejetar cartuchos nos slots A e B (a rota da tela segue o cartucho)
+- Reset suave empurrando a tampa do compartimento de cartuchos (fiel à máquina real)
+- Teclado 3D completo (89 teclas, incluindo Ç) espelhando o teclado físico
+- Modos aramado e raio-X, auto-rotação e poses de câmera
+
+## Recursos
+
+- [A experiência 3D](https://msx-expert-xp800.mvneves.workers.dev/): a réplica
+  interativa em si — ligue a máquina e digite em MSX BASIC
+- [Código-fonte](https://github.com/mneves75/msx-expert-xp800): repositório com a cena
+  Three.js, o pipeline de CRT e as ferramentas de verificação
+- [WebMSX](https://github.com/ppeccin/WebMSX): o emulador MSX carregado em runtime
+  quando um cartucho é inserido

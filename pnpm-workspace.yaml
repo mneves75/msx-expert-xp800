@@ -1,0 +1,10 @@
+# esbuild (vite), workerd (wrangler) and sharp (playwright image ops) ship native
+# binaries and need their postinstall scripts to run. Without this, `pnpm install`
+# exits non-zero and every `pnpm typecheck` / `pnpm build` fails before it starts.
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true
+minimumReleaseAgeExclude:
+  - miniflare@4.20260722.1
+  - wrangler@4.115.0

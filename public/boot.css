@@ -1,0 +1,73 @@
+/*
+ * Estilos de arranque, servidos como arquivo próprio e não como <style> embutido.
+ *
+ * Ficam fora do index.html de propósito: um bloco embutido obrigaria a CSP a
+ * carregar `style-src 'unsafe-inline'`, e este projeto não tem nenhuma superfície
+ * que justifique isso (nenhum innerHTML, nenhum HTML vindo do usuário). Como o
+ * arquivo é de mesma origem e entra por <link> no <head>, ele continua bloqueando
+ * a renderização — ou seja, nada de piscar sem estilo antes da cena montar.
+ *
+ * O CSS do HUD vive em `src/ui/hud.css` e é empacotado pelo Vite; só o que precisa
+ * existir antes do primeiro quadro está aqui.
+ */
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #08080a;
+  font-family:
+    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* Boot veil — covers the first-frame pop while the scene assembles. */
+#boot {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #08080a;
+  z-index: 10;
+  transition: opacity 700ms ease 120ms;
+}
+
+#boot[hidden] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#boot p {
+  color: #6b6a66;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+/* Mensagem sem JavaScript — classe em vez de atributo `style` embutido, pela CSP. */
+.sem-script {
+  color: #999;
+  padding: 2rem;
+}

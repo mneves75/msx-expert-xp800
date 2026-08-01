@@ -1,0 +1,29 @@
+{
+  "note": "Hashes FNV-1a dos bytes de cada textura procedural. Só regrave junto de uma mudança visual deliberada, e diga qual no CHANGELOG.",
+  "hashes": {
+    "case.normalMap": "c30ecacb",
+    "case.roughnessMap": "e4f389dd",
+    "case.aoMap": "0d57a206",
+    "keycap.normalMap": "c59d3bc8",
+    "keycap.roughnessMap": "a3746a79",
+    "keycap.aoMap": "f92ca3b9",
+    "metalScratches.normalMap": "766b6048",
+    "metalScratches.roughnessMap": "66f35597",
+    "dust": "0d50bc82",
+    "pebbleGrain": "a210396d",
+    "roughnessVariation": "785cede6"
+  },
+  "dimensions": {
+    "case.normalMap": "1024x1024",
+    "case.roughnessMap": "1024x1024",
+    "case.aoMap": "1024x1024",
+    "keycap.normalMap": "1024x1024",
+    "keycap.roughnessMap": "1024x1024",
+    "keycap.aoMap": "1024x1024",
+    "metalScratches.normalMap": "1024x1024",
+    "metalScratches.roughnessMap": "1024x1024",
+    "dust": "1024x1024",
+    "pebbleGrain": "1024x1024",
+    "roughnessVariation": "1024x1024"
+  }
+}

@@ -1,0 +1,52 @@
+# Security + caching headers for the Cloudflare static deploy.
+#
+# NOTE ON CSP: the MSX emulator (WebMSX) is deliberately NOT self-hosted — it has no
+# declared licence, so we load it from a commit-pinned, SRI-verified jsDelivr URL at
+# runtime. See docs/SPEC.md §9.
+#
+# script-src allowlists that ONE file by its full path, not the cdn.jsdelivr.net origin.
+# The origin form would let any script on the largest public CDN in the world execute here
+# if an injection point ever appeared. The exact path is safe to pin because the URL is
+# commit-immutable and answers 200 with zero redirects (CSP drops the path component after
+# a redirect, which would silently break the emulator). Re-check that if the URL ever moves.
+#
+# connect-src is 'self' only: a runtime network audit of the deployed site — boot, power on,
+# insert cartridge — shows the emulator arriving as a single `script` request and no fetch
+# or XHR to jsDelivr at all, so the third-party connect grant was buying nothing.
+#
+# style-src carries no 'unsafe-inline': the boot styles live in /boot.css and the HUD's
+# in a Vite-emitted asset, so every stylesheet is same-origin. Runtime styling goes
+# through CSSOM (element.style / cssText), which style-src does not govern. Keep it that
+# way — do not reintroduce a <style> block or a style="" attribute in index.html.
+#
+# Expect exactly two style-src-elem violations in the console once the emulator boots:
+# WebMSX injects two <style> elements of its own. They are blocked, and that is fine —
+# we only sample its canvas into a texture and never show its DOM. Measured A/B against
+# a permissive policy: canvas stays 544x416 and the tube's mean colour moves 0.05/255,
+# i.e. nothing visible changes. Do not add 'unsafe-inline' to silence them.
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/gh/ppeccin/WebMSX@4f4009e86d3e0bb9be7dcd7f0a582b0cd411d660/release/stable/6.0/cbios/embedded/wmsx.js; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
+
+# Vite emits hashed filenames into /assets/, so these are safe to pin forever.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Boot styles carry no content hash in the filename, so they revalidate with the shell
+# rather than being pinned like /assets/*.
+/boot.css
+  Cache-Control: public, max-age=0, must-revalidate
+
+# The HTML shell must always revalidate so deploys take effect immediately.
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate

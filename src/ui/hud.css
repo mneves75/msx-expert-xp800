@@ -1,0 +1,907 @@
+/*
+ * HUD — overlay do Gradiente Expert XP-800.
+ *
+ * A linguagem visual vem da própria máquina: o painel traseiro do XP-800 agrupa os
+ * conectores dentro de contornos finos de silkscreen branco, com o rótulo em caixa-alta
+ * recortado na borda superior (SPEAKER LEVEL, DATA CORDER, FUSE, AC INPUT). O HUD
+ * reproduz esse desenho — contorno hairline + rótulo encaixado na linha — em vez de
+ * inventar um estilo de "site". Nada compete com a cena: sem cor saturada fora dos
+ * cinco acentos do teclado, sem sombra dramática, sem animação gratuita.
+ *
+ * Contraste: todo texto foi verificado contra o pior caso de composição do painel
+ * (fundo translúcido sobre branco puro) e passa WCAG AA.
+ */
+
+.hud {
+  /* ── Superfícies ──────────────────────────────────────────────────────────── */
+  --hud-panel: rgba(11, 12, 14, 0.94);
+  /* Chapa opaca sob o rótulo do grupo, que transborda a borda do cartão. */
+  --hud-panel-solid: #0b0c0e;
+  --hud-sheet: rgba(9, 10, 12, 0.97);
+  --hud-line: rgba(233, 231, 226, 0.16);
+  --hud-line-soft: rgba(233, 231, 226, 0.1);
+  --hud-line-strong: rgba(233, 231, 226, 0.28);
+  --hud-well: rgba(233, 231, 226, 0.045);
+
+  /* ── Tinta ────────────────────────────────────────────────────────────────── */
+  --hud-ink: #ecebe7;
+  --hud-ink-dim: #a5a29a;
+  --hud-ink-mute: #918f86;
+
+  /* ── Acentos (paleta do próprio Expert) ───────────────────────────────────── */
+  --hud-accent: #6fb2de; /* teclas de cursor #3E7FA8, clareadas para tipo sobre preto */
+  --hud-on: #7fcb82; /* L GRA / R GRA #5A9E5C */
+  --hud-alert: #e0705f; /* STOP #C4342A */
+  --hud-msx: #cc2229;
+
+  /* ── Tipografia ───────────────────────────────────────────────────────────── */
+  --hud-sans:
+    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --hud-mono:
+    ui-monospace, 'SF Mono', SFMono-Regular, 'JetBrains Mono', 'Roboto Mono', Menlo,
+    Consolas, monospace;
+
+  /* ── Ritmo ────────────────────────────────────────────────────────────────── */
+  --hud-gutter: clamp(0.875rem, 2.6vw, 1.75rem);
+  --hud-radius: 4px;
+  --hud-ease: cubic-bezier(0.22, 0.75, 0.24, 1);
+
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  font-family: var(--hud-sans);
+  font-size: 16px; /* âncora local: o HUD não herda escala de tipo da página */
+  line-height: 1.45;
+  color: var(--hud-ink);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  opacity: 1;
+  transition: opacity 520ms var(--hud-ease);
+}
+
+/* Fade-in depois do primeiro frame — o HUD nunca aparece antes da cena. */
+.hud[data-boot='1'] {
+  opacity: 0;
+}
+
+/* Alt+H: some com tudo (também serve para capturas limpas). */
+.hud[data-chrome='hidden'] .hud__brand,
+.hud[data-chrome='hidden'] .hud__console,
+.hud[data-chrome='hidden'] .hud__sheet-toggle {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Véu superior: garante contraste do bloco-título sobre um render claro. */
+.hud::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 9rem;
+  background: linear-gradient(180deg, rgba(4, 4, 6, 0.66), rgba(4, 4, 6, 0) 78%);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Bloco-título
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.hud__brand {
+  position: absolute;
+  top: clamp(0.875rem, 2.6vh, 1.6rem);
+  left: var(--hud-gutter);
+  max-width: min(24rem, calc(100vw - 2 * var(--hud-gutter)));
+  transition:
+    opacity 260ms var(--hud-ease),
+    visibility 260ms;
+}
+
+.hud__brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hud__title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.004em;
+  color: var(--hud-ink);
+  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.85);
+}
+
+.hud__msx {
+  display: inline-block;
+  padding: 0.115em 0.36em 0.145em;
+  border-radius: 1.5px;
+  background: var(--hud-msx);
+  color: #fff;
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+  transform: translateY(-1px);
+}
+
+.hud__subtitle {
+  margin: 0.32rem 0 0;
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--hud-ink-mute);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.9);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Console (docas inferiores no desktop, bottom sheet no mobile)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.hud__console {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 0 var(--hud-gutter) clamp(0.875rem, 2.2vh, 1.6rem);
+  transition:
+    opacity 260ms var(--hud-ease),
+    visibility 260ms;
+}
+
+.hud__dock {
+  display: flex;
+  flex-direction: column;
+  /* Folga suficiente para o rótulo do grupo, que transborda a borda superior do cartão. */
+  gap: 0.8rem;
+  width: min(21rem, 34vw);
+  pointer-events: auto;
+}
+
+.hud__dock--right {
+  align-items: stretch;
+}
+
+/* ── Grupo silkscreen ──────────────────────────────────────────────────────── */
+
+.hud__group {
+  position: relative;
+  border: 1px solid var(--hud-line);
+  border-top-color: transparent;
+  border-radius: var(--hud-radius);
+  padding: 0.62rem 0.85rem 0.8rem;
+  background: var(--hud-panel);
+  backdrop-filter: blur(20px) saturate(0.85);
+  -webkit-backdrop-filter: blur(20px) saturate(0.85);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 20px 44px -26px rgba(0, 0, 0, 0.95);
+}
+
+.hud__group-head {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.16rem;
+  padding: 0 0.5rem 0 0.3rem;
+}
+
+.hud__group-head::before,
+.hud__group-head::after {
+  content: '';
+  height: 1px;
+  background: var(--hud-line);
+}
+
+.hud__group-head::before {
+  width: 0.55rem;
+}
+
+.hud__group-head::after {
+  flex: 1;
+}
+
+.hud__group-title {
+  margin: 0;
+  /* O rótulo transborda a borda do cartão; a chapa opaca impede o degrau de
+     luminosidade no meio das letras (metade sobre o cartão, metade sobre a cena). */
+  padding: 0.14rem 0.3rem 0.16rem;
+  background: var(--hud-panel-solid);
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.19em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--hud-ink-mute);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Leituras de estado
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.hud__readouts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.28rem 0.75rem;
+  margin: 0;
+}
+
+.hud__readouts > dt {
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--hud-ink-mute);
+  align-self: center;
+}
+
+.hud__readouts > dd {
+  margin: 0;
+  font-family: var(--hud-mono);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--hud-ink-dim);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.hud__readouts > dd[data-tone='on'] {
+  color: var(--hud-on);
+}
+
+.hud__readouts > dd[data-tone='off'] {
+  color: var(--hud-ink-mute);
+}
+
+.hud__readouts > dd[data-tone='live'] {
+  color: var(--hud-ink);
+}
+
+/* Só para leitor de tela: o resumo de estado com granularidade grossa. */
+.hud__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Lâmpada POWER da fascia, reproduzida em miniatura. */
+.hud__lamp {
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-right: 0.4rem;
+  border-radius: 50%;
+  background: rgba(233, 231, 226, 0.16);
+  vertical-align: 0.02rem;
+}
+
+.hud__lamp[data-lit='1'] {
+  background: var(--hud-on);
+  box-shadow: 0 0 7px rgba(127, 203, 130, 0.75);
+}
+
+.hud__note {
+  margin: 0.6rem 0 0;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--hud-line-soft);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--hud-ink-dim);
+}
+
+.hud__note[data-tone='alert'] {
+  color: var(--hud-alert);
+}
+
+.hud__note[hidden] {
+  display: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Controles
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.hud__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.hud__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/*
+ * Linha de slot. Sem catálogo é uma linha só (rótulo · inserir · ejetar); com catálogo
+ * o seletor ocupa a primeira linha e os botões caem para a segunda, alinhados sob ele.
+ */
+.hud__slot {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Colunas explícitas: sem isso o auto-placement joga "Inserir" para baixo do rótulo. */
+.hud__slot > .hud__row-label {
+  grid-column: 1;
+}
+
+.hud__slot > .hud__select {
+  grid-column: 2 / -1;
+}
+
+.hud__slot > .hud__btn {
+  grid-column: 2;
+}
+
+.hud__slot > .hud__btn--compact {
+  grid-column: 3;
+}
+
+.hud__row-label {
+  flex: 0 0 auto;
+  min-width: 3.1rem;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hud-ink-mute);
+}
+
+.hud__btn {
+  appearance: none;
+  flex: 1 1 auto;
+  min-height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.36rem 0.6rem;
+  border: 1px solid var(--hud-line);
+  border-radius: 3px;
+  background: var(--hud-well);
+  color: var(--hud-ink);
+  font-family: var(--hud-sans);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--hud-ease),
+    border-color 140ms var(--hud-ease),
+    color 140ms var(--hud-ease);
+}
+
+.hud__btn:hover:not(:disabled) {
+  background: rgba(233, 231, 226, 0.1);
+  border-color: var(--hud-line-strong);
+}
+
+.hud__btn:active:not(:disabled) {
+  background: rgba(233, 231, 226, 0.14);
+}
+
+.hud__btn:disabled,
+.hud__select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Ação secundária de largura mínima (Ejetar), ao lado de uma ação que se expande. */
+.hud__btn--compact {
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
+.hud__btn--primary {
+  border-color: rgba(233, 231, 226, 0.3);
+  background: rgba(233, 231, 226, 0.11);
+  font-weight: 600;
+}
+
+.hud__btn--primary[data-on='1'] {
+  border-color: rgba(127, 203, 130, 0.5);
+  background: rgba(90, 158, 92, 0.17);
+  color: var(--hud-on);
+}
+
+.hud__btn[aria-pressed='true'] {
+  border-color: rgba(111, 178, 222, 0.55);
+  background: rgba(62, 127, 168, 0.2);
+  color: var(--hud-accent);
+}
+
+.hud__btn-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Indicador de estado dos alternadores — o mesmo vocabulário do LED da fascia. */
+.hud__led {
+  flex: 0 0 auto;
+  width: 0.4rem;
+  height: 0.4rem;
+  border: 1px solid var(--hud-line-strong);
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 140ms var(--hud-ease);
+}
+
+.hud__btn[aria-pressed='true'] .hud__led {
+  background: var(--hud-accent);
+  border-color: var(--hud-accent);
+  box-shadow: 0 0 6px rgba(111, 178, 222, 0.6);
+}
+
+.hud__btn-key {
+  flex: 0 0 auto;
+  font-family: var(--hud-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.04em;
+  color: var(--hud-ink-mute);
+}
+
+.hud__btn:hover:not(:disabled) .hud__btn-key,
+.hud__btn[aria-pressed='true'] .hud__btn-key {
+  color: inherit;
+  opacity: 0.75;
+}
+
+.hud__select {
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 2rem;
+  padding: 0.36rem 1.5rem 0.36rem 0.6rem;
+  border: 1px solid var(--hud-line);
+  border-radius: 3px;
+  background-color: var(--hud-well);
+  background-image: linear-gradient(45deg, transparent 50%, var(--hud-ink-mute) 50%),
+    linear-gradient(135deg, var(--hud-ink-mute) 50%, transparent 50%);
+  background-position:
+    right 0.68rem center,
+    right 0.44rem center;
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+  color: var(--hud-ink);
+  font-family: var(--hud-sans);
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.hud__select:hover {
+  border-color: var(--hud-line-strong);
+}
+
+.hud__select option {
+  background: #101114;
+  color: var(--hud-ink);
+}
+
+.hud__select[hidden] {
+  display: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Legenda de navegação e atalhos
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.hud__legend {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.24rem 0.75rem;
+  margin: 0;
+  font-size: 0.625rem;
+}
+
+.hud__legend dt {
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--hud-ink-mute);
+}
+
+.hud__legend dd {
+  margin: 0;
+  text-align: right;
+  color: var(--hud-ink-dim);
+}
+
+.hud__legend dd .hud__pointer--coarse {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .hud__legend dd .hud__pointer--fine {
+    display: none;
+  }
+  .hud__legend dd .hud__pointer--coarse {
+    display: inline;
+  }
+}
+
+/* Tabela de duas colunas, no espírito da tabela de fusíveis do painel traseiro. */
+.hud__shortcuts {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr;
+  gap: 0.26rem 0.5rem;
+  margin: 0;
+  font-size: 0.625rem;
+}
+
+.hud__shortcuts dt {
+  font-family: var(--hud-mono);
+  font-size: 0.5938rem;
+  letter-spacing: 0.03em;
+  color: var(--hud-ink-dim);
+  white-space: nowrap;
+}
+
+.hud__shortcuts dd {
+  margin: 0 0.5rem 0 0;
+  color: var(--hud-ink-mute);
+  white-space: nowrap;
+}
+
+.hud__hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.5938rem;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  color: var(--hud-ink-mute);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Crédito
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.hud__credit {
+  margin: 0;
+  padding-top: 0.15rem;
+  font-size: 0.5938rem;
+  line-height: 1.55;
+  letter-spacing: 0.008em;
+  color: var(--hud-ink-mute);
+  text-wrap: pretty;
+}
+
+.hud__credit strong {
+  font-weight: 600;
+  color: var(--hud-ink-dim);
+}
+
+.hud__credit a {
+  color: var(--hud-ink-dim);
+  text-decoration: underline;
+  text-decoration-color: var(--hud-line-strong);
+  text-underline-offset: 2px;
+}
+
+.hud__credit a:hover {
+  color: var(--hud-ink);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Foco — visível de verdade, em tudo que recebe teclado
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.hud :is(button, select, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--hud-accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Navegadores sem :focus-visible continuam mostrando um anel. */
+@supports not selector(:focus-visible) {
+  .hud :is(button, select, a, [tabindex]):focus {
+    outline: 2px solid var(--hud-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Bottom sheet (mobile)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.hud__sheet-toggle {
+  display: none;
+  position: absolute;
+  right: var(--hud-gutter);
+  bottom: calc(0.875rem + env(safe-area-inset-bottom, 0px));
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.95rem;
+  border: 1px solid var(--hud-line-strong);
+  border-radius: 999px;
+  background: var(--hud-sheet);
+  backdrop-filter: blur(20px) saturate(0.85);
+  -webkit-backdrop-filter: blur(20px) saturate(0.85);
+  color: var(--hud-ink);
+  font-family: var(--hud-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 16px 36px -20px rgba(0, 0, 0, 0.95);
+  transition:
+    opacity 220ms var(--hud-ease),
+    visibility 220ms;
+}
+
+.hud__sheet-toggle-state {
+  font-family: var(--hud-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--hud-ink-mute);
+}
+
+.hud__sheet-head {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.5rem;
+}
+
+.hud__sheet-grip {
+  position: absolute;
+  top: 0.5rem;
+  left: 50%;
+  width: 2.25rem;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--hud-line-strong);
+  transform: translateX(-50%);
+}
+
+.hud__sheet-close {
+  appearance: none;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--hud-line);
+  border-radius: 999px;
+  background: var(--hud-well);
+  color: var(--hud-ink);
+  font-family: var(--hud-sans);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (max-width: 46rem), (max-height: 30rem) and (pointer: coarse) {
+  .hud::before {
+    height: 6rem;
+  }
+
+  .hud__brand {
+    top: max(0.75rem, env(safe-area-inset-top, 0px));
+  }
+
+  .hud__title {
+    font-size: 0.875rem;
+  }
+
+  .hud__sheet-toggle {
+    display: inline-flex;
+  }
+
+  .hud__sheet-head {
+    display: flex;
+  }
+
+  .hud__console {
+    top: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    max-height: min(74svh, 34rem);
+    max-height: min(74vh, 34rem);
+    padding: 1rem 1.05rem calc(1.15rem + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    background: var(--hud-sheet);
+    backdrop-filter: blur(24px) saturate(0.85);
+    -webkit-backdrop-filter: blur(24px) saturate(0.85);
+    border-top: 1px solid var(--hud-line-strong);
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -24px 60px -30px rgba(0, 0, 0, 1);
+    transform: translateY(101%);
+    visibility: hidden;
+    transition:
+      transform 340ms var(--hud-ease),
+      visibility 340ms;
+  }
+
+  .hud[data-sheet='open'] .hud__console {
+    transform: none;
+    visibility: visible;
+  }
+
+  .hud[data-sheet='open'] .hud__sheet-toggle {
+    opacity: 0;
+    visibility: hidden;
+  }
+
+  .hud__dock {
+    width: auto;
+    gap: 0;
+  }
+
+  /* Dentro do sheet os grupos viram seções empilhadas, sem caixa dupla. */
+  .hud__group {
+    border: 0;
+    border-radius: 0;
+    padding: 0.9rem 0 1rem;
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    border-bottom: 1px solid var(--hud-line-soft);
+  }
+
+  .hud__group-head {
+    position: static;
+    height: auto;
+    padding: 0 0 0.6rem;
+  }
+
+  .hud__group-head::before {
+    display: none;
+  }
+
+  .hud__group-head::after {
+    display: none;
+  }
+
+  .hud__group-title {
+    padding: 0;
+    background: none;
+  }
+
+  /* Dentro do sheet há largura de sobra: os atalhos voltam a uma coluna. */
+  .hud__shortcuts {
+    grid-template-columns: auto 1fr;
+    gap: 0.3rem 0.75rem;
+  }
+
+  .hud__shortcuts dd {
+    margin: 0;
+    text-align: right;
+  }
+
+  .hud__dock--right .hud__group:last-child {
+    border-bottom: 0;
+    padding-bottom: 0.25rem;
+  }
+
+  .hud__btn,
+  .hud__select,
+  .hud__sheet-close {
+    min-height: 2.75rem; /* alvo de toque confortável */
+    font-size: 0.8125rem;
+  }
+
+  .hud__row-label {
+    min-width: 3.4rem;
+    font-size: 0.625rem;
+  }
+
+  .hud__readouts > dt,
+  .hud__legend dt,
+  .hud__legend dd,
+  .hud__shortcuts dt,
+  .hud__shortcuts dd {
+    font-size: 0.6875rem;
+  }
+
+  .hud__readouts > dd {
+    font-size: 0.75rem;
+  }
+
+  .hud__credit,
+  .hud__hint {
+    font-size: 0.6875rem;
+  }
+}
+
+/*
+ * Telas muito estreitas: os pares rótulo/valor empilham. O valor passa a alinhar à
+ * esquerda, sob o rótulo — alinhá-lo à direita numa coluna só solta o texto no vazio.
+ */
+@media (max-width: 22rem) {
+  .hud__legend,
+  .hud__shortcuts,
+  .hud__readouts {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .hud__readouts > dt,
+  .hud__legend dt,
+  .hud__shortcuts dt {
+    margin-top: 0.5rem;
+  }
+
+  .hud__readouts > dd,
+  .hud__legend dd,
+  .hud__shortcuts dd {
+    margin: 0.1rem 0 0;
+    text-align: left;
+  }
+
+  .hud__slot {
+    grid-template-columns: 1fr auto;
+  }
+
+  .hud__slot > .hud__row-label {
+    grid-column: 1 / -1;
+  }
+
+  .hud__slot > .hud__select {
+    grid-column: 1 / -1;
+  }
+
+  .hud__slot > .hud__btn {
+    grid-column: 1;
+  }
+
+  .hud__slot > .hud__btn--compact {
+    grid-column: 2;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Preferências do usuário
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .hud,
+  .hud__brand,
+  .hud__console,
+  .hud__btn,
+  .hud__sheet-toggle {
+    transition-duration: 1ms !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .hud {
+    --hud-panel: rgba(6, 7, 8, 0.99);
+    --hud-sheet: rgba(6, 7, 8, 0.99);
+    --hud-line: rgba(233, 231, 226, 0.34);
+    --hud-line-strong: rgba(233, 231, 226, 0.55);
+    --hud-ink-mute: #c2bfb6;
+    --hud-ink-dim: #dbd9d3;
+  }
+}

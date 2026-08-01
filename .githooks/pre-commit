@@ -1,0 +1,22 @@
+#!/bin/sh
+# Blocking commit gate.
+#
+# Exists because a single stray backtick inside a GLSL template literal took the
+# whole scene offline, was captured, saved, and submitted for art review before
+# anyone opened the PNG. The linter's `no-syntax-error` rule points at exactly
+# that character, and it costs a fraction of a second.
+#
+# Enable in a fresh clone with:  git config core.hooksPath .githooks
+set -e
+
+if ! command -v ast-grep >/dev/null 2>&1; then
+  echo "pre-commit: ast-grep não encontrado — pulando o lint estrutural." >&2
+  exit 0
+fi
+
+if ! ast-grep scan; then
+  echo "" >&2
+  echo "✗ commit bloqueado: o linter estrutural achou erro(s)." >&2
+  echo "  Rode 'pnpm lint' para ver os detalhes." >&2
+  exit 1
+fi

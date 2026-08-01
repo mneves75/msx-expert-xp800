@@ -1,0 +1,25 @@
+id: no-interpolation-in-glsl
+language: typescript
+severity: warning
+message: Interpolação dentro de um literal GLSL — confira o que entra ali.
+note: |
+  Aviso, não bloqueio: interpolar um *outro trecho GLSL* constante (um bloco de
+  funções compartilhado, por exemplo) é composição legítima e o projeto faz isso
+  de propósito em Lighting.ts.
+
+  O que esta regra existe para pegar é o resto: valor numérico do JS colado no
+  código do shader, texto vindo de estado, ou qualquer coisa que possa mudar em
+  tempo de execução. Isso troca um erro de compilação por um shader inválido em
+  runtime — falha silenciosa, tela preta, e nada no console que aponte a causa.
+  Valor que varia é uniform; só constante de código entra por interpolação.
+
+  A crase solta — o defeito que derrubou a cena inteira — é pega pela regra
+  no-syntax-error, que bloqueia.
+rule:
+  kind: template_string
+  follows:
+    kind: comment
+    regex: glsl
+  has:
+    kind: template_substitution
+    stopBy: end

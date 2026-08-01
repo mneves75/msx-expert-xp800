@@ -1,0 +1,3 @@
+# Gradiente Expert XP-800 — réplica 3D interativa. Página única; nada a esconder.
+User-agent: *
+Allow: /

@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "msx-expert-xp800",
+  "compatibility_date": "2026-07-27",
+
+  // Pure static site — no Worker script, no D1, no R2. Workers Static Assets serves
+  // `dist/` straight from the edge. Nothing dynamic, so there is no `main` entrypoint.
+  "assets": {
+    "directory": "./dist",
+    // Single-page experience: every route resolves to index.html.
+    "not_found_handling": "single-page-application"
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}

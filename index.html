@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Gradiente Expert XP-800 — Réplica 3D Interativa</title>
+    <meta
+      name="description"
+      content="Réplica 3D interativa do Gradiente Expert XP-800, o computador MSX brasileiro de 1985. Ligue, digite em MSX BASIC e insira cartuchos."
+    />
+    <meta name="theme-color" content="#0a0a0b" />
+    <!-- Sem preconnect ao jsDelivr de propósito: o emulador só é buscado quando o
+         usuário liga o Expert (SPEC §9/§10), e o contato antecipado com o terceiro
+         quebraria essa fronteira de privacidade (revisão de segurança, SEC-03). -->
+    <!-- Folha externa, não bloco embutido: é o que permite à CSP dispensar
+         `style-src 'unsafe-inline'`. Mesma origem e no <head>, então continua
+         bloqueando a renderização e não há piscada sem estilo. Ver public/boot.css. -->
+    <link rel="stylesheet" href="/boot.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="boot"><p>Montando o Expert…</p></div>
+    <noscript>
+      <p class="sem-script">
+        Esta experiência 3D precisa de JavaScript e WebGL2 habilitados.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
