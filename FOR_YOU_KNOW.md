@@ -25,6 +25,10 @@ Each module owns its GPU resources and releases them in `dispose()`. The CRT con
 `ScreenSource` interface, so it does not care whether WebMSX or the procedural renderer is
 driving the pixels.
 
+The complete scene, interaction layer, HUD, and post-processing chain are required. A
+failure in any of them aborts bootstrap, keeps `window.__msxReady` false, and disposes the
+partial application; optional prewarming and adaptive quality may degrade safely.
+
 ## Decisions that protect the project
 
 - WebMSX declares no license. It is never shipped, copied, bundled, or proxied; the app
@@ -53,6 +57,12 @@ shadow atlas is frozen between real changes.
 
 ## Lessons worth keeping
 
+- **The most expensive thing in the frame was a picture nobody saw.** SSAO needed a
+  normal buffer, and the NormalPass that produced it re-drew the entire scene a second
+  time — 124 of 284 desktop draw calls for an intermediate no viewer ever looks at.
+  Swapping to n8ao, which reconstructs normals from the depth the renderer already has,
+  deleted that whole submission at every quality tier. When profiling, ask what each
+  draw is *for*, not just what it costs.
 - **A stable spring at 60 fps may explode below it.** The keycap integrator crossed its
   semi-implicit Euler limit below about 51 fps (`h < 0.828/ω`). One invalid matrix then
   corrupted the entire instanced keyboard. Subdivide the time step; do not merely clamp
@@ -82,6 +92,13 @@ shadow atlas is frozen between real changes.
   failed on Safari/Metal and blanked the useful render. A 16×16 runtime probe now selects
   FXAA only for the incompatible path; user-agent guesses would have hidden the real
   boundary and lowered quality unnecessarily.
+- **A bright inset is not proof that the screen fits.** The luminance gate deliberately
+  samples inside the bezel, while responsive framing uses the uninset projected screen.
+  Capture artifacts record requested/effective DPR and use p99, not a single hot pixel.
+- **Input cancellation is not a click.** The keyboard bridge owns only strokes it accepted;
+  repeats and keyup stay inside that path even if focus moves to an input, uncaptured
+  shortcuts pass through, and pointer cancel or blur releases hardware without toggling
+  cartridges or voltage.
 
 ## The cartridge game
 

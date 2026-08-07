@@ -2,7 +2,25 @@
 
 Notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0-beta3] — 2026-08-07
+
+### Added
+
+- Real ambient-occlusion toggle (`PostFX.setAOEnabled`, `QualityProfile.ao`) and a new adaptive-quality rung that switches AO off before any resolution drop, expanding the ladder to five monotone-down tiers.
+- `--lock-tier` flag and a dedicated interleaved AO on/off pair measurement in the profiling tool.
+
+### Changed
+
+- Replaced the normal-pass SSAO with depth-only ambient occlusion (n8ao), eliminating a full second scene submission at every tier: 120 fewer desktop and 66 fewer mobile draw calls, with the AO cost falling from 2.40 ms to 1.72 ms on desktop and from 2.18 ms to 1.28 ms on mobile.
+
+- Reframed desktop and portrait defaults against the CRT's full projected bounds and made required scene, interaction, HUD, and post-processing components fail boot closed.
+- Made capture artifacts record requested and effective DPR, drawing-buffer dimensions, and robust p99 screen luminance instead of a single-pixel peak.
+
+### Fixed
+
+- Prevented physical-key repeats from escaping to browser/WebMSX handlers, preserved uncaptured Ctrl/Meta chords, and stopped canceled pointer gestures from triggering click-only hardware actions.
+- Made keyboard rebuilds release cached GPU state, refreshed frozen shadows while the CRT rocker moves, and completed procedural texture cache identities.
+- Hardened interaction, game, deployment, and JavaScript syntax probes so off-screen targets, partial scenes, render-pipeline failures, and unexpected CSP violations cannot report false success.
 
 ## [0.2.0-beta2] — 2026-08-07
 

@@ -54,9 +54,16 @@ Curated project decisions and measurements. Read this with the newest
   **328/234 to 270/176**, and triangles from **584,617 to 445,825**.
 - A requested mobile DPR 3 resolves to renderer DPR 2 and a 780×1688 drawing buffer. The
   artifact records viewport, effective DPR, drawing buffer, CPU count, and load average.
-- With the beta2 camera framing, current scene-only counts are **125** at 1920×1080 DPR 1
-  and **71** at 390×844 DPR 3; both remain under the <150 budget. The counts are
-  frustum-dependent, so compare performance only at an identical pose.
+- With full projected-screen framing, current scene-only counts are **112** / **467,609**
+  triangles at 1920×1080 DPR 1 and **110** / **477,637** at 390×844 requested DPR 3;
+  both remain under the <150 budget. The counts are frustum-dependent, so compare
+  performance only at an identical pose.
+- Depth-only AO (n8ao 2.0.0) replaced NormalPass+SSAO in v0.2.0-beta3: PostFX
+  submissions fell from **159 to 39** desktop and **105 to 39** mobile, and the paired
+  AO cost from **2.40 to 1.72 ms** desktop / **2.18 to 1.28 ms** mobile. The adaptive
+  ladder is five tiers; AO-off is tier 2, before any DPR cap, because the submission
+  saving holds at any resolution while resolution drops are the most visible loss on a
+  text-bearing CRT. Full spec and after-numbers: `docs/PERF-SPEC.md`.
 
 ## Open measured mismatches
 
@@ -88,5 +95,16 @@ Curated project decisions and measurements. Read this with the newest
 - Coarse state publication needs semantic endpoints in addition to numeric deltas. A 2%
   threshold could leave the HUD cached at 99%; publish the ready and zero crossings
   explicitly.
+- Geometry fit and luminance sampling need different ROIs. A 14%-inset phosphor sample
+  can prove the tube is lit but cannot prove that its full projected bounds fit the
+  viewport; record both, and gate fit on the uninset box.
+- Physical input ownership starts at accepted keydown and ends at its matching keyup.
+  Forced hardware release keeps a tombstone until keyup or a fresh non-repeat keydown;
+  handle owned events before any later text-entry exclusion, swallow repeats, pass
+  through chords never accepted, and treat pointer cancellation as release without
+  click-only side effects.
+- A required render pipeline must fail closed. Silent direct-render fallbacks can publish
+  a partial visual result as ready and make capture/deployment probes approve the wrong
+  product.
 - Rewriting Git history does not immediately remove an orphaned object from GitHub's API.
   Sensitive material must never enter a published repository in the first place.

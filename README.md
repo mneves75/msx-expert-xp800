@@ -66,14 +66,14 @@ pnpm deploy       # build + production Worker
 Start `pnpm dev`, then choose the tool that answers the question being tested:
 
 ```bash
-node tools/shoot.mjs                   # 15 camera poses and lit-subject gate
-node tools/verify-interactions2.mjs   # power, cartridges, HUD, and interaction state
+node tools/shoot.mjs --dpr 2           # 15 poses, p99 light gate, and DPR/buffer proof
+node tools/verify-interactions2.mjs   # hardware, input ownership, cancellation, render health
 node tools/verify-keymap.mjs          # modeled keys against both screen sources
 node tools/tune-exposure.mjs          # measured keycap RGB against the spec
 node tools/profile.mjs --label base   # frames, passes, draw calls, CPU, and host load
 node tools/profile.mjs --width 390 --height 844 --dpr 3 --label mobile
-node tools/probe-game.mjs             # plays Super Cósmico on real WebMSX
-node tools/verify-prod.mjs <url>       # deployed headers, emulator, and cartridge flow
+node tools/probe-game.mjs             # plays Super Cósmico through keyboard and 3D joystick
+node tools/verify-prod.mjs <url>       # headers, exact CSP behavior, emulator, and cartridge flow
 ```
 
 See [`AGENTS.md`](AGENTS.md) for the complete trigger table. Open visual captures and
@@ -111,6 +111,10 @@ src/
 import each other; each owns and disposes its GPU resources. When every module and the
 camera report that they are settled, `Engine` skips presentation until an interaction or
 explicit `requestRender()` invalidates the frame.
+
+Required scene modules, interaction, HUD, and post-processing fail bootstrap closed: the
+ready flag is never published for a partial reconstruction. Texture/geometry prewarming
+and adaptive quality remain optional because their synchronous/runtime paths are complete.
 
 Active frames are presented at no more than about 60 Hz. Resolution is capped by physical
 pixel count rather than CSS size alone, and the CRT processor follows the active drawing

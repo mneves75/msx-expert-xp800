@@ -222,8 +222,8 @@ Studio void, like the reference site. Not a lit room — a photographic set.
   This is what makes the silhouette read.
 - **Screen light** — the CRT is a real emissive area light spilling blue-green onto the
   keyboard and desk. Must respond when the machine powers on/off.
-- **Contact shadows** — high-quality soft shadows, plus SSAO in the seams, vents, and
-  under the shell overhang.
+- **Contact shadows** — high-quality soft shadows, plus screen-space AO in the seams,
+  vents, and under the shell overhang.
 
 Tone mapping: **AgX**, exposure **0.72**. Physically-correct lights,
 `useLegacyLights = false`. Color management on, output sRGB.
@@ -237,9 +237,10 @@ set, fix the measured lighting distribution before changing exposure, then re-ru
 
 ## 7. Post-processing chain
 
-Render/normal inputs (4× MSAA on the high profile) → shared SSAO + bloom pass → depth of
-field (subtle, focus on the machine) → chromatic aberration (very slight, edges only) +
-film grain (very fine) + vignette + AgX tone map → SMAA.
+Render (4× MSAA on the high profile) → depth-only ambient occlusion (n8ao, normals
+reconstructed from depth — no normal pass) → bloom → depth of field (subtle, focus on
+the machine) → chromatic aberration (very slight, edges only) + film grain (very fine) +
+vignette + AgX tone map → SMAA.
 
 SMAA runs last because raw HDR CRT/graphite contrast saturates its color-edge detector;
 tone mapping preserves useful discontinuities. Input MSAA handles geometry, while final
@@ -312,9 +313,10 @@ triangles from **677,173 to 507,817**; at 390×844 DPR 1, scene calls fell from 
 71** and triangles from **584,617 to 445,825**. A requested mobile DPR 3 is capped to an
 effective DPR 2 and a 780×1688 drawing buffer. `tools/profile.mjs` records viewport,
 effective DPR, buffer dimensions, CPU count, and load average with every artifact.
-With the beta2 camera framing, the current default views measure **125** scene-only calls
-and **499,789** triangles at desktop DPR 1, and **71** calls / **424,385** triangles at
-mobile DPR 3. These counters are frustum-dependent; use an identical pose for A/B claims.
+With the corrected full-screen framing, the current default views measure **112**
+scene-only calls and **467,609** triangles at desktop DPR 1, and **110** calls /
+**477,637** triangles at mobile DPR 3. Both full projected CRT bounds fit their viewport;
+these counters are frustum-dependent, so use an identical pose for A/B claims.
 
 ## 11. Quality bar
 
