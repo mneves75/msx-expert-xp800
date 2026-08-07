@@ -238,7 +238,11 @@ film grain (very fine) + vignette + AgX tone map → SMAA.
 
 SMAA runs last because raw HDR CRT/graphite contrast saturates its color-edge detector;
 tone mapping preserves useful discontinuities. Input MSAA handles geometry, while final
-SMAA catches shader, specular, and normal-map edges. Provenance: `PostFX.ts`, 2026-07-31.
+SMAA catches shader, specular, and normal-map edges. The implementation compiles and
+links an SMAA probe against the active renderer; only a failed probe substitutes FXAA,
+which preserves the scene on incompatible Safari/Metal paths without lowering capable
+browsers. Provenance: `PostFX.ts`, verified on Chromium and Safari/iOS 26.5/27 on
+2026-08-07.
 
 Restraint is the rule: if a viewer can *name* the effect, it is turned up too high.
 
@@ -250,7 +254,8 @@ before changing materials.*
 ## 8. Interaction
 
 - Orbit / pan / zoom, damped, with sensible limits (never below the desk plane).
-- Auto-rotate idle mode, disengages on user input.
+- Auto-rotate idle mode, disengages on user input. It starts disabled for coarse pointers
+  and `prefers-reduced-motion: reduce`, and remains manually toggleable.
 - **Power switch** — real toggle, boots the emulator, screen warms up (CRT warm-up is a
   visible ramp, not an instant on).
 - **Cartridge insert/eject** on both slots A and B, with physical slide animation and the
@@ -291,6 +296,17 @@ flap swing with gravity, cable catenary sag on the keyboard cable and AC cord.
 - Texture memory < 256 MB. Procedural/canvas-generated maps preferred over downloads.
 - Lazy-load the emulator only on power-on.
 - Full asset budget < 3 MB gzipped, excluding the hotlinked emulator.
+
+Presentation is capped at approximately **60 Hz**, independent of 120/144 Hz display
+refresh. The drawing buffer is capped at **2560×1440 physical pixels**. The CRT processor
+runs at approximately **60 Hz** on a dirty scheduler and follows the active drawing-buffer
+width while retaining at least **2×** source resolution, up to **1536×1152**.
+
+Measured 2026-08-07: at 1920×1080 DPR 1, scene draw calls fell from **258 to 137** and
+triangles from **677,173 to 507,817**; at 390×844 DPR 1, scene calls fell from **129 to
+71** and triangles from **584,617 to 445,825**. A requested mobile DPR 3 is capped to an
+effective DPR 2 and a 780×1688 drawing buffer. `tools/profile.mjs` records viewport,
+effective DPR, buffer dimensions, CPU count, and load average with every artifact.
 
 ## 11. Quality bar
 

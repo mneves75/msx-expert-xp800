@@ -42,6 +42,11 @@ changing. A module returns `false` from `update()` when settled; render-coupled 
 in `beforeRender()`. At rest the scene presents zero frames, and the frozen film grain
 makes consecutive captures byte-identical.
 
+While active, presentation is capped near 60 Hz even on 120/144 Hz displays. A
+2560×1440 physical-pixel ceiling prevents mobile DPR from silently multiplying the GPU
+load, and the CRT's own 60 Hz dirty scheduler follows the useful drawing-buffer size
+instead of always rendering its maximum target.
+
 External mutations must call `window.__msx.engine.requestRender(2)`. Changes to
 shadow-casting geometry must also set `renderer.shadowMap.needsUpdate = true`, because the
 shadow atlas is frozen between real changes.
@@ -69,9 +74,14 @@ shadow atlas is frozen between real changes.
   ratio is 0.85/0.74/0.69 in the render versus 0.36/0.28/0.25 in the photograph, and
   exposure 0.72 measures keycaps at rgb(172,169,162), not rgb(184,181,175). Treat these as
   open lighting-calibration defects, not reasons to rewrite the documented targets.
-- **The draw-call budget is not met.** At 1080p the scene contributes 258 calls,
-  NormalPass 136, SSAO/bloom 19, DoF 12, and SMAA 3, totaling 429; a shadow refresh reaches
-  523. NormalPass is the largest isolated lever.
+- **Tiny transmissive meshes can tax the whole scene.** Two indicator lenses enabled a
+  renderer-wide transmission prepass. Removing transmission from those millimetric parts,
+  then scheduling reflection/CRT work by elapsed time, reduced the 1080p scene from 258
+  to 137 draw calls and the mobile scene from 129 to 71.
+- **Shader support must be proved on the active renderer.** SMAA compiled in Chromium but
+  failed on Safari/Metal and blanked the useful render. A 16×16 runtime probe now selects
+  FXAA only for the incompatible path; user-agent guesses would have hidden the real
+  boundary and lowered quality unnecessarily.
 
 ## The cartridge game
 

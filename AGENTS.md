@@ -74,7 +74,7 @@ Source inspection cannot judge this project. Use the tool whose trigger matches:
 | Keyboard layout or key mapping | `node tools/verify-keymap.mjs` | Every modeled key vs both screen sources (incl. `Ç` and `NumpadEqual`) |
 | Exposure, lighting, or tone mapping | `node tools/tune-exposure.mjs` | Measured keycap RGB vs the spec target at several exposures |
 | The deployed site | `node tools/verify-prod.mjs [url]` | Asserts CSP/HSTS/nosniff/X-Frame-Options on the real response, then that the emulator loads under that CSP, the tube warms, and a cartridge inserts — exiting non-zero on any failure |
-| Frame cost, draw calls, pass cost, CPU hotspots | `node tools/profile.mjs --label <name>` | rAF frame times (vsync off), per-pass A/B in interleaved rounds, draw-call counters (with/without frozen shadows), CDP CPU profile → `.scratch/profile/<name>.json`. Compare labels before claiming a perf win |
+| Frame cost, draw calls, pass cost, CPU hotspots | `node tools/profile.mjs --label <name> [--width N --height N --dpr N]` | rAF frame times (vsync and the app presentation cap off), effective DPR/drawing buffer, host load, per-pass A/B in interleaved rounds, draw-call counters (with/without frozen shadows), CDP CPU profile → `.scratch/profile/<name>.json`. Compare labels before claiming a perf win |
 | The Super Cósmico game ROM, key input into the emulator | `node tools/probe-game.mjs [url]` | Plays the game on the real WebMSX reading canvas pixels: splash → field → autonomous movement → wall death freezes with the field intact → key restart. Needs the CDN |
 
 The dev server runs on :5173 (`pnpm dev`). The page exposes `window.__msxReady`,
@@ -88,12 +88,14 @@ project's costliest visual detour was chasing a bloom artifact through materials
 ## Performance targets
 
 Targets: 60 fps at 1440p on Apple silicon and 1080p on mid-range hardware; fewer than 150
-draw calls, 900k triangles, and 256 MB texture memory. Keep keycaps instanced. These
-targets guide design but are not yet CI-enforced.
+scene draw calls, 900k triangles, and 256 MB texture memory. Active presentation is capped
+near 60 Hz, the physical drawing buffer at 2560×1440, and the CRT target at 1536×1152.
+Keep keycaps instanced. These targets guide design but are not yet CI-enforced.
 
 ## Releases
 
 `package.json` owns the version; `CHANGELOG.md` uses US English and Keep a Changelog.
-Releases are tagged `v<semver>` and published as GitHub Releases; deploys use `pnpm deploy`
-under Node. Before deploying, run `pnpm build`, the applicable verification above, and scan
-fresh `dist/` for secrets and local paths.
+Releases are tagged `v<semver>` and published as GitHub Releases. Staging uses
+`pnpm deploy:staging`; production uses `pnpm deploy`, both under Node. Before deploying,
+run `pnpm build`, the applicable verification above, and scan fresh `dist/` for secrets
+and local paths.

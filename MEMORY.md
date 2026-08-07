@@ -21,8 +21,13 @@ Curated project decisions and measurements. Read this with the newest
 - Modules return `false` from `update()` when settled; render-coupled work belongs in
   `beforeRender()`. External mutations call `engine.requestRender(2)`, and moved or hidden
   shadow casters also invalidate the frozen shadow map.
-- `wrangler.jsonc` defines one Cloudflare Worker with no separate environment. Staging
-  and production currently refer to the same deployed artifact.
+- `wrangler.jsonc` keeps production and `msx-expert-xp800-staging` as separate Cloudflare
+  Worker targets. Staging uses `pnpm deploy:staging`; production remains `pnpm deploy`.
+- Active presentation is capped near 60 Hz, the drawing buffer at 2560×1440 physical
+  pixels, and the CRT target at 1536×1152. Profiling explicitly disables the presentation
+  cap when measuring raw frame cost.
+- Coarse pointers and reduced-motion users start without idle auto-rotation. SMAA remains
+  the preferred antialiaser, with FXAA selected only after a real renderer probe fails.
 
 ## Measured calibrations
 
@@ -40,6 +45,15 @@ Curated project decisions and measurements. Read this with the newest
   reference remains black under flash; the former `#232323` and 0.80/0.30 response lifted
   and shifted blue under IBL.
 
+## Performance evidence — 2026-08-07
+
+- At 1920×1080 DPR 1, scene draw calls fell from **258 to 137**, full/frozen submissions
+  from **523/429 to 402/308**, and triangles from **677,173 to 507,817**.
+- At 390×844 DPR 1, scene calls fell from **129 to 71**, full/frozen submissions from
+  **328/234 to 270/176**, and triangles from **584,617 to 445,825**.
+- A requested mobile DPR 3 resolves to renderer DPR 2 and a 780×1688 drawing buffer. The
+  artifact records viewport, effective DPR, drawing buffer, CPU count, and load average.
+
 ## Open measured mismatches
 
 - The console-top/keyboard-shell RGB ratio measures **0.85/0.74/0.69** in the render
@@ -49,9 +63,6 @@ Curated project decisions and measurements. Read this with the newest
 - Exposure 0.72 now measures QWERTY keycaps at **rgb(172,169,162)**, while exposure 1.0
   produces **rgb(184,181,175)**. Re-run `tools/tune-exposure.mjs` before changing the
   documented exposure target.
-- At 1080p, idle draw calls decompose as **258 scene + 136 NormalPass + 19 SSAO/bloom +
-  12 DoF + 3 SMAA = 429**; a shadow refresh reaches **523**. This exceeds the target of
-  150 even before post-processing. NormalPass is the largest isolated lever.
 
 ## Expensive lessons
 
@@ -67,5 +78,11 @@ Curated project decisions and measurements. Read this with the newest
 - Sequential graphics benchmarks drift. `gl.finish()` under headless ANGLE/Metal did not
   provide a trustworthy completion barrier. Use interleaved rAF A/B rounds with vsync
   disabled, and reject performance gains below the measured noise floor.
+- A tiny `MeshPhysicalMaterial.transmission` can create a scene-wide prepass. Reserve
+  transmission for optics whose refraction is visible; clearcoat/opacity is enough for
+  indicator lenses.
+- Coarse state publication needs semantic endpoints in addition to numeric deltas. A 2%
+  threshold could leave the HUD cached at 99%; publish the ready and zero crossings
+  explicitly.
 - Rewriting Git history does not immediately remove an orphaned object from GitHub's API.
   Sensitive material must never enter a published repository in the first place.

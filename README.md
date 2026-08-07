@@ -30,7 +30,8 @@ Inspired by [ps1-pi.vercel.app](https://ps1-pi.vercel.app/); built from scratch.
   artifacts, halation, studio reflections, warm-up, shutdown decay, and emitted light.
 - **Measured interaction and rendering:** press individual 3D keys, use the physical
   keyboard, steer with the joystick, insert cartridges, and inspect wireframe or X-ray
-  views. The settled scene renders on demand instead of presenting identical frames.
+  views. The settled scene renders on demand, active presentation is capped near 60 Hz,
+  and the physical drawing buffer never exceeds 2560×1440 pixels.
 
 ## Controls
 
@@ -56,7 +57,8 @@ pnpm install
 pnpm dev          # http://localhost:5173
 pnpm verify       # ast-grep + TypeScript
 pnpm build        # production build in dist/
-pnpm deploy       # build + Cloudflare Workers deployment
+pnpm deploy:staging # build + isolated staging Worker
+pnpm deploy       # build + production Worker
 ```
 
 ## Verification
@@ -68,7 +70,8 @@ node tools/shoot.mjs                   # 15 camera poses and lit-subject gate
 node tools/verify-interactions2.mjs   # power, cartridges, HUD, and interaction state
 node tools/verify-keymap.mjs          # modeled keys against both screen sources
 node tools/tune-exposure.mjs          # measured keycap RGB against the spec
-node tools/profile.mjs --label base   # frames, passes, draw calls, and CPU profile
+node tools/profile.mjs --label base   # frames, passes, draw calls, CPU, and host load
+node tools/profile.mjs --width 390 --height 844 --dpr 3 --label mobile
 node tools/probe-game.mjs             # plays Super Cósmico on real WebMSX
 node tools/verify-prod.mjs <url>       # deployed headers, emulator, and cartridge flow
 ```
@@ -84,6 +87,9 @@ so a fork deploys to any static host (Cloudflare, Netlify, GitHub Pages, S3, ngi
 - **Cloudflare Workers Static Assets** is the zero-config path: the included
   [`wrangler.jsonc`](wrangler.jsonc) carries no account-specific values, so
   `pnpm deploy` publishes to whichever Cloudflare account your Wrangler is logged into.
+- **Staging:** `pnpm deploy:staging` targets the separate
+  `msx-expert-xp800-staging` Worker; run `tools/verify-prod.mjs` against its URL before
+  tagging or promoting the build.
 - **Other hosts:** serve `dist/` with SPA fallback and replicate the security and cache
   headers from [`public/_headers`](public/_headers) (Cloudflare and Netlify read that
   file natively; elsewhere, port the CSP to your host's header mechanism).
@@ -105,6 +111,11 @@ src/
 import each other; each owns and disposes its GPU resources. When every module and the
 camera report that they are settled, `Engine` skips presentation until an interaction or
 explicit `requestRender()` invalidates the frame.
+
+Active frames are presented at no more than about 60 Hz. Resolution is capped by physical
+pixel count rather than CSS size alone, and the CRT processor follows the active drawing
+buffer up to 1536×1152 while retaining at least 2× source resolution. Profiling disables
+the presentation cap explicitly so its timings measure raw cost rather than cadence.
 
 Cloudflare Workers serves `dist/` as static assets with no Worker script. Security and
 cache headers live in `public/_headers`; its jsDelivr allowance exists only for the

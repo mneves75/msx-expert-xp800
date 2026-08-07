@@ -14,12 +14,13 @@ pnpm typecheck            # tsc --noEmit
 pnpm lint                 # ast-grep scan
 pnpm verify               # lint + typecheck
 pnpm build                # typecheck + Vite build into dist/
-pnpm deploy               # build + Wrangler deploy; Node only, never Bun
+pnpm deploy:staging       # build + isolated staging Worker
+pnpm deploy               # build + production Worker; Node only, never Bun
 ```
 
 Use pnpm and Node 22 or newer. In a fresh clone, enable the blocking ast-grep hook with
-`git config core.hooksPath .githooks`. CI runs ast-grep, typecheck, build, and a leakage
-scan of the generated `dist/`.
+`git config core.hooksPath .githooks`. CI runs a dependency audit, ast-grep, typecheck,
+build, and a leakage scan of the generated `dist/`.
 
 ## Verification
 
@@ -32,7 +33,7 @@ node tools/verify-interactions2.mjs
 node tools/verify-keymap.mjs
 node tools/tune-exposure.mjs
 node tools/verify-prod.mjs [url]
-node tools/profile.mjs --label x
+node tools/profile.mjs --label x [--width N --height N --dpr N]
 node tools/probe-game.mjs [url]
 ```
 
@@ -56,6 +57,10 @@ the camera settle, `Engine` skips presenting frames. External changes that the u
 loop cannot observe must call `window.__msx.engine.requestRender(2)`; hiding a shadow
 caster must also set `renderer.shadowMap.needsUpdate = true`. Render-coupled work belongs
 in `beforeRender()`. The authoritative contract is in `src/core/types.ts`.
+
+Active presentation is capped near 60 Hz, but `tools/profile.mjs` disables that cap to
+measure raw cost. The physical drawing buffer is capped at 2560×1440 pixels, and profile
+artifacts record effective DPR, buffer dimensions, host CPU count, and load average.
 
 ## Architecture
 

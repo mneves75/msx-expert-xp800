@@ -4,6 +4,35 @@ Notable changes are documented here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.0-beta1] — 2026-08-07
+
+### Added
+
+- Added an isolated Cloudflare staging Worker and `pnpm deploy:staging`; production deployment remains a separate command.
+- Added DPR-aware performance profiles with actual renderer pixel ratio, drawing-buffer dimensions, host CPU data, and load averages.
+
+### Changed
+
+- Capped presentation at approximately 60 Hz and the physical drawing buffer at 2560×1440 pixels, while preserving uncapped raw-cost profiling.
+- Disabled idle auto-rotation by default for coarse pointers and reduced-motion users, and made the mobile control sheet opaque without canvas blur.
+- Updated Wrangler to 4.119.0 and pinned transitive `undici` 7.29.0.
+
+### Fixed
+
+- Added an SMAA runtime shader probe that falls back to FXAA only on incompatible renderers, restoring the complete scene on Safari/iOS without lowering quality elsewhere.
+- Published the CRT's ready and fully-off state at exact endpoints so the HUD cannot remain at “Aquecendo · 99%”.
+
+### Performance
+
+- Reduced the 1080p scene from 258 to 137 draw calls and 677,173 to 507,817 triangles; full/frozen submissions fell from 523/429 to 402/308.
+- Reduced the 390×844 mobile scene from 129 to 71 draw calls and 584,617 to 445,825 triangles; full/frozen submissions fell from 328/234 to 270/176.
+- Removed transmission from two tiny indicator lenses, scheduled desk reflections by elapsed presentation time, and sized the 60 Hz CRT target to the active drawing buffer with a 1536×1152 ceiling.
+
+### Security
+
+- Added a blocking moderate-severity dependency audit to CI and expanded local secret/private-key ignore patterns.
+- Completed a source, dependency, runtime-boundary, SRI, response-header, and generated-artifact review with no exploitable critical, high, or medium application finding.
+
 ## [0.1.0] — 2026-08-02
 
 First public release.
@@ -41,5 +70,6 @@ First public release.
 - Cloudflare response headers enforce CSP, HSTS, `nosniff`, frame denial, and immutable caching for hashed assets; CI actions are commit-pinned.
 - Reference photographs without redistribution licenses are excluded from the repository and fetched only for local comparison.
 
-[Unreleased]: https://github.com/mneves75/msx-expert-xp800/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta1...HEAD
+[0.2.0-beta1]: https://github.com/mneves75/msx-expert-xp800/compare/v0.1.0...v0.2.0-beta1
 [0.1.0]: https://github.com/mneves75/msx-expert-xp800/releases/tag/v0.1.0

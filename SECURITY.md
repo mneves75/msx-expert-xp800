@@ -19,3 +19,13 @@ Do not open a public issue. Expect an initial response within seven days.
 - `public/_headers` limits scripts to `'self'` and `cdn.jsdelivr.net`, and sets CSP,
   HSTS, `nosniff`, and frame-denial headers. Practical bypass reports are welcome.
 - User-selected ROM bytes stay in browser memory and are never persisted or uploaded.
+
+## Verification
+
+- CI runs `pnpm audit --audit-level moderate` before lint, type checking, and build.
+- Deployment verification checks CSP, HSTS, `nosniff`, frame denial, emulator loading,
+  CRT warm-up, and cartridge insertion against the real response.
+- Staging uses a separate Worker name, so validation cannot overwrite production.
+- The 2026-08-07 review covered source sinks, generated assets, dependency advisories,
+  the pinned WebMSX bytes/SRI digest, and live response headers. It found no exploitable
+  critical, high, or medium application vulnerability.
