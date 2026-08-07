@@ -749,7 +749,7 @@ function* silkscreenDecalSteps(draw: DecalDraw, opts: SilkscreenOptions): Genera
 
   const key = opts.cacheKey
   if (key === undefined) return yield* build()
-  return yield* memoSteps(`silk:${key}:${w}x${h}:${wear}:${relief}:${gloss}`, build)
+  return yield* memoSteps(`silk:${key}:${w}x${h}:${ink}:${wear}:${relief}:${gloss}:${seed}`, build)
 }
 
 // ---------------------------------------------------------------------------
@@ -929,7 +929,14 @@ export function keycapLegendAtlas(
       relief: 1.6,
       gloss: 0.5,
       seed: SEED_WEAR,
-      cacheKey: `atlas:${cell}:${legends.map((l) => `${l.id}${l.primary}${l.secondary ?? ''}`).join(',')}`,
+      cacheKey: `atlas:${cell}:${JSON.stringify(
+        legends.map((legend) => [
+          legend.id,
+          legend.primary,
+          legend.secondary ?? null,
+          legend.fontScale ?? 1,
+        ]),
+      )}`,
     },
   )
 

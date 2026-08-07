@@ -37,7 +37,7 @@ jobs:
         run: pnpm audit --audit-level moderate
 
       - name: ast-grep lint
-        uses: ast-grep/action@370e627637505696e4365db4a149af9f2311afe8 # v1.4
+        run: pnpm lint
 
       - name: Typecheck
         run: pnpm typecheck

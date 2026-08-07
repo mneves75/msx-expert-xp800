@@ -1321,6 +1321,7 @@ export class KeyboardModule implements SceneModule {
   private readonly axisY = new THREE.Vector3(0, 1, 0)
 
   async build(ctx: ModuleContext): Promise<THREE.Group> {
+    this.dispose()
     this.renderer = ctx.renderer
     // Pré-aquece (fatiado) as duas poeiras que `grimeMap` consome de forma
     // síncrona em `silver()`/`black()` — mesmos parâmetros, mesma chave de cache.
@@ -1718,8 +1719,15 @@ export class KeyboardModule implements SceneModule {
     this.geometries.length = 0
     this.materials.length = 0
     this.textures.length = 0
+    this.toneCache.clear()
+    this.capAtlas = null
+    this.shellMaterial = null
+    this.panelMaterial = null
+    this.inUse = null
     this.activeKeys.clear()
     this.keys.clear()
+    this.dirty.clear()
+    this.renderer = null
   }
 
   // ── API pública ──────────────────────────────────────────────────────────

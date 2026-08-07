@@ -506,6 +506,8 @@ class Interactions implements InteractionsModule {
   private readonly joystickKeys = new Set<string>()
   /** Fontes segurando cada tecla do MSX — ver {@link driveMsxKey}. */
   private readonly msxKeyOwners = new Map<string, Set<'rig' | 'joystick'>>()
+  /** Código físico do evento → tecla MSX e estado de liberação forçada. */
+  private readonly physicalKeys = new Map<string, { code: string; released: boolean }>()
 
   // State + subscribers.
   private autoRotate = true
@@ -1875,6 +1877,9 @@ class Interactions implements InteractionsModule {
   }
 
   private releaseAllKeys(): void {
+    // A tecla física pode continuar pressionada após reset/power-off/blur. Preserve a
+    // posse DOM até keyup para engolir repeats, mas permita um novo keydown não-repeat.
+    for (const owned of this.physicalKeys.values()) owned.released = true
     for (const code of [...this.keyRigs.keys()]) this.releaseKey(code)
     // Setas do manche não passam pelos rigs de tecla — soltar explicitamente,
     // senão um blur no meio do arrasto deixa o MSX com a direção presa.
@@ -1898,7 +1903,18 @@ class Interactions implements InteractionsModule {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    if (this.disposed || isTextEntry(event.target)) return
+    if (this.disposed) return
+    const owned = this.physicalKeys.get(event.code)
+    if (owned !== undefined) {
+      if (!event.repeat && owned.released) {
+        this.physicalKeys.delete(event.code)
+      } else {
+        if (SWALLOW.has(owned.code)) event.preventDefault()
+        event.stopPropagation()
+        return
+      }
+    }
+    if (isTextEntry(event.target)) return
     if (event.ctrlKey || event.metaKey) return
 
     // Alt is the shortcut namespace (and L GRA / R GRA on the MSX, which still pass).
@@ -1919,19 +1935,17 @@ class Interactions implements InteractionsModule {
     // Stop the emulator's own global handler from injecting the same key a second time:
     // `ScreenSource.sendKey` is the one documented path in, and this is it.
     event.stopPropagation()
+    this.physicalKeys.set(event.code, { code, released: false })
     this.pressKey(code)
   }
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
-    if (this.disposed || isTextEntry(event.target)) return
-    const code = this.resolveKey(event)
-    if (code === null) {
-      // A modifier may have changed between press and release; do not strand a cap.
-      this.releaseKey(event.code)
-      return
-    }
+    if (this.disposed) return
+    const owned = this.physicalKeys.get(event.code)
+    if (owned === undefined) return
+    this.physicalKeys.delete(event.code)
     event.stopPropagation()
-    this.releaseKey(code)
+    if (!owned.released) this.releaseKey(owned.code)
   }
 
   private handleShortcut(code: string): boolean {

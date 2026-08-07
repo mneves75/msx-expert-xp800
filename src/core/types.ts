@@ -78,13 +78,13 @@ export interface SceneModule {
  * plastic/metal/rubber response so parts don't look like they came from different scenes.
  */
 export interface MaterialLibrary {
-  /** Graphite main-unit shell, #3A3733, pebble grain. */
+  /** Graphite main-unit shell; calibrated response lives in SPEC §4. */
   caseGraphite(): THREE.MeshPhysicalMaterial
-  /** Darker front fascia, #2E2C29. */
+  /** Darker front fascia; calibrated response lives in SPEC §4. */
   caseFascia(): THREE.MeshPhysicalMaterial
-  /** Warm silver keyboard shell, #A8A49B. */
+  /** Warm silver keyboard shell; calibrated response lives in SPEC §4. */
   caseSilver(): THREE.MeshPhysicalMaterial
-  /** Matte near-black inset panel, #232323, roughness 0.80. */
+  /** Generic matte near-black inset material. */
   panelBlack(): THREE.MeshPhysicalMaterial
   /**
    * Keycap plastic. `worn` raises gloss for finger-polished caps (spacebar, Enter).
@@ -95,8 +95,6 @@ export interface MaterialLibrary {
   metal(hex: number, roughness?: number): THREE.MeshPhysicalMaterial
   /** Soft black rubber feet. */
   rubber(): THREE.MeshPhysicalMaterial
-  /** Curved CRT front glass, with reflection + slight tint. */
-  crtGlass(): THREE.MeshPhysicalMaterial
   /** Emissive screen surface fed by the emulator texture. */
   screenEmissive(map: THREE.Texture): THREE.MeshBasicMaterial
 }

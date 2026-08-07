@@ -11,8 +11,8 @@
  *  2. **Fósforo e vidro são malhas separadas**, 13 mm de paralaxe entre elas. Esse
  *     deslocamento é o que dá profundidade ao raster quando a câmera orbita — o
  *     efeito mais barato e mais convincente do conjunto.
- *  3. **O vidro reflete o ambiente** (SPEC §5.8, inegociável): `crtGlass()` com
- *     clearcoat + transmissão, sobre a IBL procedural do estúdio.
+ *  3. **O vidro reflete o ambiente** (SPEC §5.8, inegociável): faceplate
+ *     não-transmissiva com clearcoat sobre a IBL procedural do estúdio.
  *  4. **A moldura afunila até o vidro.** O anel interno do bezel segue a sagita da
  *     face ponto a ponto, então o funil é fundo nos cantos (~21 mm) e raso no topo
  *     (~7 mm) — exatamente como uma moldura injetada em cima de um tubo real.
@@ -2113,6 +2113,7 @@ class CrtMonitor implements CrtMonitorModule {
       if (Math.abs(goal - this.rocker.rotation.x) < 1e-4) this.rocker.rotation.x = goal
       else rockerMoving = true
     }
+    if (rockerMoving && this.renderer !== null) this.renderer.shadowMap.needsUpdate = true
 
     if (!this.lightParked) this.parkScreenLight()
     this.driveScreenLight()

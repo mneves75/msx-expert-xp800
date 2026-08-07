@@ -4,6 +4,7 @@
 // Point it at your deploy with the first argument or MSX_PROD_URL:
 //   node tools/verify-prod.mjs https://my-deploy.example.workers.dev/
 import { chromium } from 'playwright'
+import { mkdir } from 'node:fs/promises'
 
 const TARGET = process.argv[2] ?? process.env.MSX_PROD_URL
 if (!TARGET) {
@@ -17,17 +18,17 @@ if (!TARGET) {
  * against a permissive policy measured no visible difference. These are expected, so
  * they must not be counted as failures — but anything else must.
  */
-const EXPECTED_CSP_VIOLATION = /style-src/i
+const EXPECTED_WEBMSX_STYLE_VIOLATION =
+  /(?:Refused to apply inline style|Applying inline style violates).*(?:style-src-elem|style-src)/i
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=metal', '--enable-gpu'] })
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } })
 
 const errs = []
-const expectedViolations = []
+const cspViolations = []
 const classify = (text) => {
   if (/Content Security Policy|Refused to/i.test(text)) {
-    if (EXPECTED_CSP_VIOLATION.test(text)) expectedViolations.push(text)
-    else errs.push(text)
+    cspViolations.push(text)
     return
   }
   errs.push(text)
@@ -72,6 +73,12 @@ const idle = await page.evaluate(async () => {
 
 expect('slots vazios abrem o BASIC interno', idle.emulator === 'procedural', `emulator = ${idle.emulator}`)
 expect('tubo aqueceu', idle.warmth > 0.5, `warmth = ${idle.warmth}`)
+expect(
+  'sem violações CSP antes de carregar o WebMSX',
+  cspViolations.length === 0,
+  cspViolations.slice(0, 3).join(' | '),
+)
+const cspCountBeforeWebMsx = cspViolations.length
 
 await page.evaluate(() => window.__msx.interactions.insertCartridge('A'))
 await page
@@ -87,17 +94,29 @@ const out = await page.evaluate(() => {
 
 expect('cartucho promove para o WebMSX real sob a CSP', out.emulator === 'webmsx', `emulator = ${out.emulator}`)
 expect('cartucho inserido', out.slotA !== null, `slotA = ${out.slotA}`)
+const webMsxViolations = cspViolations.slice(cspCountBeforeWebMsx)
+expect(
+  'WebMSX gera somente as duas violações inline-style conhecidas',
+  webMsxViolations.length === 2 &&
+    webMsxViolations.every((text) => EXPECTED_WEBMSX_STYLE_VIOLATION.test(text)),
+  webMsxViolations.join(' | '),
+)
 expect('sem erros de console inesperados', errs.length === 0, errs.slice(0, 3).join(' | '))
+expect(
+  'pipeline de renderização íntegro',
+  await page.evaluate(() => window.__msx?.engine?.isHealthy === true),
+)
 
-await page.evaluate(() => { window.__msxCamera({ azimuth: 38, elevation: 20, distance: 1.12, target: [0, 0.12, -0.06] }) })
+await page.evaluate(() => window.__msx.cameraRig.resetPose(true))
 await page.waitForTimeout(1500)
-await page.screenshot({ path: 'shots/prod-live.png' })
+await mkdir('.scratch/verify-prod', { recursive: true })
+await page.screenshot({ path: '.scratch/verify-prod/deploy-live.png' })
 await browser.close()
 
 console.log(`\n${JSON.stringify(out)}`)
-console.log(`violações de CSP esperadas (WebMSX): ${expectedViolations.length}`)
+console.log(`violações de CSP esperadas (WebMSX): ${webMsxViolations.length}`)
 if (failures.length > 0) {
   console.error(`\n${failures.length} verificação(ões) falharam:\n  ${failures.join('\n  ')}`)
   process.exit(1)
 }
-console.log('\nprodução verificada.')
+console.log('\nimplantação verificada.')

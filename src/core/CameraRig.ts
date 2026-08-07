@@ -81,14 +81,14 @@ const DEFAULT_POSE: Required<Omit<CameraPose, 'target'>> & {
   azimuth: 38,
   elevation: 20,
   distance: 1.12,
-  target: [0, 0.24, -0.06],
+  target: [0, 0.32, -0.06],
 }
 
 /** Front-on framing keeps the enlarged CRT screen inside a portrait viewport. */
 const PORTRAIT_POSE: typeof DEFAULT_POSE = {
   azimuth: 0,
   elevation: 10,
-  distance: 0.99,
+  distance: 1.9,
   target: [0, 0.23, -0.12],
 }
 

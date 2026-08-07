@@ -323,7 +323,7 @@ export interface LightingOptions {
   readonly environmentIntensity?: number
   /**
    * Scene white point in kelvin. Every source is von Kries-adapted against it, so this
-   * temperature renders neutral. Default 5600, which leaves the 4500 K key visibly warm.
+   * temperature renders neutral. Default 5150, which leaves the 4500 K key visibly warm.
    * Pass 0 to disable and get raw blackbody colours.
    */
   readonly whiteBalanceKelvin?: number

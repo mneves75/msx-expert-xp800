@@ -28,8 +28,8 @@ import { afterFirstPaint, yieldToMain } from './core/cooperative'
  * renamed export or a changed signature is a compile error here rather than a module
  * that silently never makes it into the scene.
  *
- * Failure policy: a module that throws while building is logged and skipped. One broken
- * part must never blank the whole set.
+ * Required scene, interaction, HUD and PostFX components fail the boot closed. Optional
+ * prewarming and adaptive quality may degrade without falsifying readiness.
  */
 
 // ─── Capture harness contract ────────────────────────────────────────────────────
@@ -82,21 +82,15 @@ function showBootMessage(message: string): void {
 // ─── Registration ────────────────────────────────────────────────────────────────
 
 /**
- * Build one module into the scene. Isolated: a module that throws is reported and the
- * rest of the set still assembles.
+ * Build one required module into the scene. A rejection aborts the bootstrap so
+ * window.__msxReady can never describe a partial reconstruction.
  */
-async function register(engine: Engine, module: SceneModule): Promise<boolean> {
-  try {
-    // Fronteira de tarefa entre módulos: junto com os geradores cooperativos das
-    // texturas, é o que mantém o boot em fatias curtas (TBT ≈ 0) em vez de uma
-    // tarefa longa única por módulo.
-    await yieldToMain()
-    await engine.register(module)
-    return true
-  } catch (error) {
-    console.error(`[main] módulo "${module.name}" falhou ao construir — cena segue sem ele:`, error)
-    return false
-  }
+async function register(engine: Engine, module: SceneModule): Promise<void> {
+  // Fronteira de tarefa entre módulos: junto com os geradores cooperativos das
+  // texturas, é o que mantém o boot em fatias curtas (TBT ≈ 0) em vez de uma
+  // tarefa longa única por módulo.
+  await yieldToMain()
+  await engine.register(module)
 }
 
 /**
@@ -371,7 +365,7 @@ async function bootstrap(): Promise<void> {
     if (application.isDisposed) return
 
     performance.mark('msx:modules-done')
-    let postFX: PostFX | null = null
+    let postFX: PostFX
     let postFXCandidate: PostFX | null = null
     try {
       postFXCandidate = await createPostFX(engine.renderer, engine.scene, engine.camera)
@@ -389,18 +383,13 @@ async function bootstrap(): Promise<void> {
       } catch (cleanupError) {
         console.error('[main] falha ao limpar o pós-processamento incompleto:', cleanupError)
       }
-      console.error('[main] falha ao instalar o pós-processamento — renderização direta:', error)
+      throw new Error('Falha ao instalar o pós-processamento obrigatório.', { cause: error })
     }
 
     // Interaction layer: it is itself a SceneModule (it owns the hover highlight and the
     // cables), and its `build()` binds to the models already in the scene.
-    let interactions: InteractionsModule | null = null
-    try {
-      const candidate = createInteractions(ctx)
-      if (await register(engine, candidate)) interactions = candidate
-    } catch (error) {
-      console.error('[main] a camada de interação não subiu:', error)
-    }
+    const interactions: InteractionsModule = createInteractions(ctx)
+    await register(engine, interactions)
 
     if (application.isDisposed) return
 
@@ -421,7 +410,7 @@ async function bootstrap(): Promise<void> {
     performance.mark('msx:preupload-done')
     const softwareRenderer = isSoftwareRenderer(engine.renderer)
     if (softwareRenderer) {
-      postFX?.setQuality('low')
+      postFX.setQuality('low')
       // Teto no Engine, não `setPixelRatio` direto: o próximo resize desfaria.
       engine.capPixelRatio(0.5)
       console.info('[main] rasterizador de software detectado — resolução e qualidade reduzidas.')
@@ -474,13 +463,8 @@ async function bootstrap(): Promise<void> {
     if (application.isDisposed) return
 
     performance.mark('msx:warm-done')
-    let hud: HudHandle | null = null
-    try {
-      const candidate = createHud(interactions ?? ctx)
-      if (application.ownHud(candidate)) hud = candidate
-    } catch (error) {
-      console.error('[main] o HUD não subiu:', error)
-    }
+    const hudCandidate = createHud(interactions)
+    const hud: HudHandle | null = application.ownHud(hudCandidate) ? hudCandidate : null
 
     if (application.isDisposed || activeApplication !== application) return
 

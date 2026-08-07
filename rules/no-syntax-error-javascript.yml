@@ -1,0 +1,6 @@
+id: no-syntax-error-javascript
+language: javascript
+severity: error
+message: Erro de sintaxe — o script não vai executar.
+rule:
+  kind: ERROR

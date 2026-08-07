@@ -38,9 +38,133 @@ const out = await page.evaluate(async () => {
   o.powerOn = S().power.on
   o.emulator = S().emulator
 
-  // Typing reaches the screen source (subscribe to note/no-crash + IN USE path)
-  for (const c of ['KeyP', 'KeyR', 'KeyI', 'KeyN', 'KeyT']) { itx.tapKey(c); await wait(140) }
-  o.typedOk = true
+  // Typing must reach the active screen source as real down/up pairs.
+  const typedCodes = ['KeyP', 'KeyR', 'KeyI', 'KeyN', 'KeyT']
+  const typedEvents = []
+  const typedScreen = itx.screen
+  const originalTypedSendKey = typedScreen?.sendKey
+  if (typedScreen && typeof originalTypedSendKey === 'function') {
+    typedScreen.sendKey = function (code, down) {
+      typedEvents.push([code, down])
+      return originalTypedSendKey.call(this, code, down)
+    }
+  }
+  try {
+    for (const code of typedCodes) { itx.tapKey(code); await wait(140) }
+    await wait(100)
+  } finally {
+    if (typedScreen && typeof originalTypedSendKey === 'function') {
+      typedScreen.sendKey = originalTypedSendKey
+    }
+  }
+  o.typedEvents = typedEvents
+
+  // A physical key is owned once: repeats stay inside the bridge, while Ctrl shortcuts
+  // that were never captured remain available to the browser.
+  const physicalEvents = []
+  const downstream = []
+  const physicalScreen = itx.screen
+  const originalPhysicalSendKey = physicalScreen?.sendKey
+  const observe = (event) => downstream.push([event.type, event.code])
+  document.addEventListener('keydown', observe)
+  document.addEventListener('keyup', observe)
+  if (physicalScreen && typeof originalPhysicalSendKey === 'function') {
+    physicalScreen.sendKey = function (code, down) {
+      physicalEvents.push([code, down])
+      return originalPhysicalSendKey.call(this, code, down)
+    }
+  }
+  try {
+    const down = new KeyboardEvent('keydown', {
+      code: 'Space', key: ' ', bubbles: true, cancelable: true,
+    })
+    const repeat = new KeyboardEvent('keydown', {
+      code: 'Space', key: ' ', repeat: true, bubbles: true, cancelable: true,
+    })
+    const textEntry = document.createElement('input')
+    document.body.append(textEntry)
+    document.body.dispatchEvent(down)
+    textEntry.dispatchEvent(repeat)
+    await wait(80)
+    textEntry.dispatchEvent(new KeyboardEvent('keyup', {
+      code: 'Space', key: ' ', bubbles: true, cancelable: true,
+    }))
+    textEntry.remove()
+    await wait(180)
+    document.body.dispatchEvent(new KeyboardEvent('keydown', {
+      code: 'KeyA', key: 'a', ctrlKey: true, bubbles: true, cancelable: true,
+    }))
+    document.body.dispatchEvent(new KeyboardEvent('keyup', {
+      code: 'KeyA', key: 'a', bubbles: true, cancelable: true,
+    }))
+    o.physicalDefaultsPrevented = down.defaultPrevented && repeat.defaultPrevented
+  } finally {
+    document.removeEventListener('keydown', observe)
+    document.removeEventListener('keyup', observe)
+    if (physicalScreen && typeof originalPhysicalSendKey === 'function') {
+      physicalScreen.sendKey = originalPhysicalSendKey
+    }
+  }
+  o.physicalEvents = physicalEvents
+  o.downstreamKeys = downstream
+
+  // Reset releases the emulated key immediately, but the browser stroke may still be
+  // held. Repeats stay captured; a fresh non-repeat can replace the tombstone.
+  const lifecycleDownstream = []
+  const observeLifecycle = (event) => lifecycleDownstream.push([event.type, event.code])
+  document.addEventListener('keydown', observeLifecycle)
+  document.addEventListener('keyup', observeLifecycle)
+  const lifecycleDown = new KeyboardEvent('keydown', {
+    code: 'ArrowDown', key: 'ArrowDown', bubbles: true, cancelable: true,
+  })
+  const lifecycleRepeat = new KeyboardEvent('keydown', {
+    code: 'ArrowDown', key: 'ArrowDown', repeat: true, bubbles: true, cancelable: true,
+  })
+  const lifecycleFresh = new KeyboardEvent('keydown', {
+    code: 'ArrowDown', key: 'ArrowDown', bubbles: true, cancelable: true,
+  })
+  document.body.dispatchEvent(lifecycleDown)
+  itx.fireReset()
+  const tombstoned = itx.physicalKeys.get('ArrowDown')?.released === true
+  document.body.dispatchEvent(lifecycleRepeat)
+  document.body.dispatchEvent(lifecycleFresh)
+  const renewed = itx.physicalKeys.get('ArrowDown')?.released === false
+  document.body.dispatchEvent(new KeyboardEvent('keyup', {
+    code: 'ArrowDown', key: 'ArrowDown', bubbles: true, cancelable: true,
+  }))
+  document.removeEventListener('keydown', observeLifecycle)
+  document.removeEventListener('keyup', observeLifecycle)
+  o.lifecycleOwnership = {
+    tombstoned,
+    renewed,
+    cleared: !itx.physicalKeys.has('ArrowDown'),
+    defaultsPrevented:
+      lifecycleDown.defaultPrevented &&
+      lifecycleRepeat.defaultPrevented &&
+      lifecycleFresh.defaultPrevented,
+    downstream: lifecycleDownstream,
+  }
+
+  // Browser/OS cancellation releases the gesture but must not turn into a click.
+  const picker = itx.picker
+  const voltageBeforeCancel = itx.voltage240
+  if (picker && itx.voltageSelector) {
+    picker.activeHit = {
+      object: itx.voltageSelector,
+      partId: 'voltage-selector',
+      label: 'Seletor de voltagem',
+      cursor: 'pointer',
+      keyCode: undefined,
+      instanceId: undefined,
+      point: new window.__msx.three.Vector3(),
+      distance: 0,
+      userData: itx.voltageSelector.userData,
+    }
+    picker.activePointerId = 77
+    picker.activeDragged = false
+    picker.onPointerCancel(new PointerEvent('pointercancel', { pointerId: 77 }))
+  }
+  o.cancelPreservedVoltage = itx.voltage240 === voltageBeforeCancel
 
   // Cartridge A insert/eject with state reflection
   const before = S().slotA
@@ -91,7 +215,38 @@ check('I3a', 'power liga', out.powerOn === true)
 check('I3b', 'CRT warm-up é rampa', out.earlyWarmth < out.lateWarmth && out.earlyWarmth < 0.9, `${out.earlyWarmth.toFixed(2)}→${out.lateWarmth.toFixed(2)}`)
 check('I3e', 'CRT publica estado pronto', out.readyWarmth >= 0.995, `publicado=${out.readyWarmth.toFixed(3)} direto=${out.directReadyWarmth.toFixed(3)}`)
 check('I3c', 'fonte de tela ativa', out.emulator === 'webmsx' || out.emulator === 'procedural', String(out.emulator))
-check('I6', 'digitação tapKey ok', out.typedOk)
+const expectedTypedEvents = ['KeyP', 'KeyR', 'KeyI', 'KeyN', 'KeyT']
+  .flatMap((code) => [[code, true], [code, false]])
+check(
+  'I6',
+  'tapKey envia pares reais ao emulador',
+  JSON.stringify(out.typedEvents) === JSON.stringify(expectedTypedEvents),
+  JSON.stringify(out.typedEvents),
+)
+check(
+  'I6a',
+  'tecla física captura repetição uma única vez',
+  out.physicalDefaultsPrevented === true &&
+    JSON.stringify(out.physicalEvents) === JSON.stringify([['Space', true], ['Space', false]]),
+  JSON.stringify(out.physicalEvents),
+)
+check(
+  'I6b',
+  'atalho Ctrl não capturado continua no navegador',
+  JSON.stringify(out.downstreamKeys) === JSON.stringify([['keydown', 'KeyA'], ['keyup', 'KeyA']]),
+  JSON.stringify(out.downstreamKeys),
+)
+check(
+  'I6c',
+  'reset preserva posse física até keyup ou novo keydown',
+  out.lifecycleOwnership?.tombstoned === true &&
+    out.lifecycleOwnership?.renewed === true &&
+    out.lifecycleOwnership?.cleared === true &&
+    out.lifecycleOwnership?.defaultsPrevented === true &&
+    out.lifecycleOwnership?.downstream?.length === 0,
+  JSON.stringify(out.lifecycleOwnership),
+)
+check('I7', 'pointercancel não aciona clique', out.cancelPreservedVoltage === true)
 check('I4a', 'inserir cartucho A reflete no estado', out.slotAAfterInsert !== null, String(out.slotAAfterInsert))
 check('I4b', 'ejetar cartucho A reflete no estado', out.slotAAfterEject === null, String(out.slotAAfterEject))
 // `out.promoted` é exigido de propósito: sem a promoção real ao WebMSX a ejeção cai
@@ -105,8 +260,26 @@ check('I2', 'auto-rotação (flag)', out.autoRotate === true)
 check('I9', 'resetView existe e roda', out.resetView === true)
 check('I3d', 'desligar faz rampa', out.midOff > 0.02 && out.finalOff < 0.05, `mid=${out.midOff.toFixed(2)} final=${out.finalOff.toFixed(3)}`)
 
+// Última sonda: destrutiva apenas para esta página descartável. Um PostFX quebrado
+// precisa parar o motor e marcar a saúde como falsa, nunca virar render direto silencioso.
+const renderFailure = await page.evaluate(async () => {
+  const { engine, postFX } = window.__msx
+  postFX.render = () => { throw new Error('__verify_render_failure__') }
+  engine.requestRender(1)
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  return { healthy: engine.isHealthy }
+})
+check('I10', 'falha do PostFX fecha o render', renderFailure.healthy === false)
+
+const unexpectedErrors = errs.filter((error) => !error.includes('__verify_render_failure__'))
+check(
+  'I0',
+  'sem erros inesperados no console',
+  unexpectedErrors.length === 0,
+  [...new Set(unexpectedErrors)].slice(0, 3).join(' | '),
+)
+
 const fails = R.filter((r) => !r.pass).length
 console.log(`\n${R.length - fails}/${R.length} PASS`)
-if (errs.length) console.log('console errors:', [...new Set(errs)].slice(0, 5).join(' | '))
 await browser.close()
 process.exit(fails ? 1 : 0)

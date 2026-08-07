@@ -331,34 +331,6 @@ export function createMaterialLibrary(renderer: THREE.WebGLRenderer): ManagedMat
         return m
       }),
 
-    crtGlass: () =>
-      cached('crt-glass', () => {
-        const m = new THREE.MeshPhysicalMaterial({
-          name: 'crt-glass',
-          // Vidro de TRC dos anos 80: cinza-esverdeado, nunca incolor.
-          color: new THREE.Color(0xdfe6e0),
-          metalness: 0,
-          roughness: 0.06,
-          ior: 1.52,
-          transmission: 0.96,
-          thickness: 0.012,
-          attenuationColor: new THREE.Color(0x9fb8a8),
-          attenuationDistance: 0.35,
-          // Face externa polida — é o que devolve o reflexo da sala (SPEC §5.8).
-          clearcoat: 1,
-          clearcoatRoughness: 0.02,
-          specularIntensity: 1,
-          envMapIntensity: 1.4,
-          side: THREE.FrontSide,
-          // Transmissivo é renderizado no passe próprio do three; `transparent`
-          // aqui empurraria a malha para a fila errada.
-          transparent: false,
-          depthWrite: true,
-          dithering: true,
-        })
-        return m
-      }),
-
     screenEmissive: (map: THREE.Texture) =>
       cached(`screen-${map.uuid}`, () => {
         // Framebuffer do emulador é conteúdo sRGB. Só definimos se ainda estiver

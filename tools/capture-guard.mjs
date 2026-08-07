@@ -49,6 +49,7 @@ export async function assertPageHealthy(page, errors, { requireReady = true } = 
     const banner = document.querySelector('#vite-error-overlay, .vite-error-overlay')
     return {
       ready: window.__msxReady === true,
+      healthy: window.__msx?.engine?.isHealthy ?? null,
       overlay: overlay !== null || banner !== null,
       viteError:
         typeof window.__viteError === 'object' && window.__viteError !== null
@@ -69,6 +70,11 @@ export async function assertPageHealthy(page, errors, { requireReady = true } = 
       errors: [...new Set(errors)].slice(0, 10),
     })
   }
+  if (state.healthy === false) {
+    throw new CaptureAbort('the render pipeline failed after boot', {
+      errors: [...new Set(errors)].slice(0, 10),
+    })
+  }
   if (errors.length > 0) {
     throw new CaptureAbort(`${errors.length} console/page error(s) before capture`, {
       errors: [...new Set(errors)].slice(0, 10),
@@ -84,8 +90,11 @@ export async function assertPageHealthy(page, errors, { requireReady = true } = 
  * pose, so the same assertion works for the wide shot and the macro without
  * anyone maintaining per-pose coordinates.
  */
-export async function objectRoi(page, objectName) {
-  return page.evaluate((name) => {
+export async function objectRoi(page, objectName, inset = 0.14) {
+  if (!Number.isFinite(inset) || inset < 0 || inset >= 0.5) {
+    throw new TypeError(`objectRoi inset must be in [0, 0.5), got ${inset}`)
+  }
+  return page.evaluate(({ name, inset }) => {
     const scene = window.__msx?.scene
     const camera = window.__msx?.engine?.camera
     if (!scene || !camera) return null
@@ -122,17 +131,17 @@ export async function objectRoi(page, objectName) {
       minY = Math.min(minY, py)
       maxY = Math.max(maxY, py)
     }
-    // Slight inset: the outermost ring of the phosphor mesh sits under the
-    // bezel, and including it would average unlit plastic into the reading.
+    // The luminance gate uses a slight inset because the outer phosphor ring sits
+    // under the bezel. Geometry-fit callers pass zero to get the honest full bounds.
     const w = maxX - minX
     const h = maxY - minY
     return {
-      x: minX + w * 0.14,
-      y: minY + h * 0.14,
-      width: w * 0.72,
-      height: h * 0.72,
+      x: minX + w * inset,
+      y: minY + h * inset,
+      width: w * (1 - 2 * inset),
+      height: h * (1 - 2 * inset),
     }
-  }, objectName)
+  }, { name: objectName, inset })
 }
 
 /**

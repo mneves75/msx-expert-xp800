@@ -7,7 +7,7 @@ import { CameraRig, type CameraRigOptions } from './CameraRig'
  *
  * Owns nothing visual. Every piece of the machine arrives as a {@link SceneModule}
  * from `src/models/*`, and lighting / post-processing plug in through
- * {@link Engine.setPipeline}. A module that throws is isolated, never fatal.
+ * {@link Engine.setPipeline}. Module-build policy belongs to the bootstrap caller.
  */
 
 /** Shadow map resolution every shadow-casting light in the scene should use. */
@@ -131,6 +131,7 @@ export class Engine {
   private frames = 0
   private pendingReady = false
   private ready = false
+  private renderFailure: unknown = null
   /** Frames explicitly requested by `requestRender` that must still be presented. */
   private framesRequested = 0
   private lastRafAt = 0
@@ -384,6 +385,11 @@ export class Engine {
     return this.ready
   }
 
+  /** False after an unrecoverable renderer or post-processing failure. */
+  get isHealthy(): boolean {
+    return this.renderFailure === null
+  }
+
   get lastPresentedAt(): number {
     return this.presentedAt
   }
@@ -519,25 +525,10 @@ export class Engine {
       if (this.pipeline) this.pipeline.render(presentationDt)
       else this.renderer.render(this.scene, this.camera)
     } catch (error) {
+      this.renderFailure = error
       console.error('[Engine] erro de renderização:', error)
-      if (this.pipeline) {
-        // Fall back to direct rendering rather than presenting nothing at all.
-        console.warn('[Engine] desativando o pipeline de pós-processamento.')
-        const failedPipeline = this.pipeline
-        this.disposePipeline(failedPipeline)
-        if (this.pipeline === failedPipeline) this.pipeline = null
-        this.restoreDirectRendering()
-        try {
-          this.renderer.render(this.scene, this.camera)
-        } catch (directError) {
-          console.error('[Engine] erro no fallback de renderização direta:', directError)
-          this.stop()
-          return
-        }
-      } else {
-        this.stop()
-        return
-      }
+      this.stop()
+      return
     }
 
     this.frames += 1

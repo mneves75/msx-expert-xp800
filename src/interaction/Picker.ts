@@ -213,6 +213,7 @@ export class RaycastPicker {
   private readonly pickObjects: THREE.Object3D[] = []
   private readonly candidateByObject = new Map<THREE.Object3D, PickCandidate>()
   private readonly occluderGeometry = new THREE.BoxGeometry(1, 1, 1)
+  private readonly occluderMaterial = new THREE.MeshBasicMaterial()
   private pickSetDirty = true
 
   private hoverHit: PickHit | null = null
@@ -511,7 +512,7 @@ export class RaycastPicker {
       if (size.x <= 0 || size.y <= 0 || size.z <= 0) continue
 
       const localMatrix = new THREE.Matrix4().compose(center, rotation, size)
-      const proxy = new THREE.Mesh(this.occluderGeometry)
+      const proxy = new THREE.Mesh(this.occluderGeometry, this.occluderMaterial)
       proxy.name = `oclusor:${object.name}`
       proxy.matrixAutoUpdate = false
       addOccluder(proxy, object, localMatrix)
@@ -811,11 +812,11 @@ export class RaycastPicker {
     const hit = this.activeHit
     if (hit === null) return
     if (this.activePointerId !== null && event.pointerId !== this.activePointerId) return
-    this.finishGesture(hit, event)
+    this.finishGesture(hit, event, true)
   }
 
-  private finishGesture(hit: PickHit, event: PointerEvent): void {
-    const dragged = this.activeDragged
+  private finishGesture(hit: PickHit, event: PointerEvent, cancelled = false): void {
+    const dragged = this.activeDragged || cancelled
     this.activeHit = null
     this.activePointerId = null
     this.activeDragged = false
@@ -839,7 +840,7 @@ export class RaycastPicker {
     this.activePointerId = null
     this.activeDragged = false
     if (this.orbit !== null) this.orbit.enabled = this.orbitWasEnabled
-    if (hit !== null) this.handlers.onRelease?.(hit, false, new PointerEvent('pointercancel'))
+    if (hit !== null) this.handlers.onRelease?.(hit, true, new PointerEvent('pointercancel'))
     this.setHover(null)
     this.pointerDirty = true
     this.domElement.style.cursor = ''
@@ -859,6 +860,7 @@ export class RaycastPicker {
     this.pickObjects.length = 0
     this.candidateByObject.clear()
     this.occluderGeometry.dispose()
+    this.occluderMaterial.dispose()
     this.domElement.style.cursor = ''
   }
 }

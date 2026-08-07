@@ -11,6 +11,7 @@
  *   node tools/shoot.mjs --pose hero,keyboard # subset
  *   node tools/shoot.mjs --out shots/round3   # custom dir
  *   node tools/shoot.mjs --width 2560 --height 1440
+ *   node tools/shoot.mjs --dpr 2
  *   node tools/shoot.mjs --hud                # keep the HUD chrome in frame
  *   node tools/shoot.mjs --power off          # capture the machine switched off
  *   node tools/shoot.mjs --no-verify          # skip the lit-subject assertion
@@ -44,28 +45,43 @@ import {
 const args = process.argv.slice(2)
 const flag = (name, fallback) => {
   const i = args.indexOf(`--${name}`)
-  return i !== -1 && args[i + 1] ? args[i + 1] : fallback
+  if (i === -1) return fallback
+  const value = args[i + 1]
+  if (!value || value.startsWith('--')) {
+    console.error(`✗ --${name} requires a value`)
+    process.exit(2)
+  }
+  return value
 }
 const has = (name) => args.includes(`--${name}`)
+const numberFlag = (name, fallback, { min = Number.MIN_VALUE, integer = false } = {}) => {
+  const raw = flag(name, fallback)
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < min || (integer && !Number.isInteger(value))) {
+    console.error(`✗ --${name} must be ${integer ? 'an integer' : 'a number'} >= ${min} (got "${raw}")`)
+    process.exit(2)
+  }
+  return value
+}
 
 const OUT = resolve(flag('out', 'shots'))
 const URL_ = flag('url', 'http://localhost:5173/')
-const WIDTH = Number(flag('width', '1920'))
-const HEIGHT = Number(flag('height', '1080'))
-const SETTLE = Number(flag('settle', '1400'))
+const WIDTH = numberFlag('width', '1920', { min: 1, integer: true })
+const HEIGHT = numberFlag('height', '1080', { min: 1, integer: true })
+const DPR = numberFlag('dpr', '1', { min: 0.1 })
+const SETTLE = numberFlag('settle', '1400', { min: 0 })
 const SHOW_HUD = has('hud')
 const POWER_ON = flag('power', 'on') !== 'off'
 const VERIFY = !has('no-verify')
 /**
  * A lit CRT has to clear both bars: a mean well above the black-plastic floor
- * *and* a genuine highlight. Mean alone passes a uniformly grey mush; peak alone
- * passes a single stuck pixel. Round 2's dead screen measured mean ≈ 9, max ≈ 12.
+ * *and* a broad highlight. Mean alone passes a uniformly grey mush; maximum alone
+ * passes a single stuck pixel. Round 2's dead screen measured mean ≈ 9, p99 ≈ 12.
  */
 const SCREEN_MIN_MEAN = 60
-// 250 foi calibrado com o bloom antigo (limiar 1.0) inflando o pico. Com o bloom
-// contido em 1.45/0.6 e o tubo 40 % maior, o herói legitimamente aceso mede pico
-// ~162; a tela morta da rodada 2 media pico 12 — ainda há mais de 12× de margem.
-const SCREEN_MIN_PEAK = 150
+// Com o bloom contido e o tubo 40 % maior, poses frontais legítimas medem p99
+// ≥ 125; a tela morta da rodada 2 media ~12. O percentil rejeita um pixel isolado.
+const SCREEN_MIN_P99 = 100
 /** Below this the screen is a detail in the frame, not the subject — don't gate on it. */
 const SCREEN_MIN_COVERAGE = 0.04
 /**
@@ -76,7 +92,7 @@ const SCREEN_MIN_COVERAGE = 0.04
  */
 const HIDE = flag('hide', '')
 /** Override the vertical FOV in degrees — long lens for spec-verification shots. */
-const FOV = Number(flag('fov', '0'))
+const FOV = numberFlag('fov', '0', { min: 0 })
 
 /**
  * Inspection poses. Named so critic agents can request specific scrutiny.
@@ -84,8 +100,8 @@ const FOV = Number(flag('fov', '0'))
  */
 const POSES = {
   // Target raised/pulled back so the enlarged CRT (scale 1.624) sits whole in frame.
-  hero: [38, 20, 1.12, [0, 0.24, -0.06]],
-  front: [0, 10, 0.99, [0, 0.23, -0.12]],
+  hero: [38, 20, 1.12, [0, 0.32, -0.06]],
+  front: [0, 10, 1.9, [0, 0.23, -0.12]],
   // 3/4 from behind, not dead-on: the CRT stands directly behind the console, so an
   // azimuth-180 camera far enough out to frame the 0.40 m back panel would have to sit
   // inside the tube. 138° puts it ~0.19 m clear of the cabinet's right flank and still
@@ -111,6 +127,11 @@ const POSES = {
 
 const requested = flag('pose', '')
 const poseNames = requested ? requested.split(',').map((s) => s.trim()) : Object.keys(POSES)
+const unknownPoses = poseNames.filter((name) => !(name in POSES))
+if (unknownPoses.length > 0) {
+  console.error(`✗ unknown pose(s): ${unknownPoses.join(', ')}`)
+  process.exit(2)
+}
 
 await mkdir(OUT, { recursive: true })
 
@@ -126,7 +147,7 @@ const browser = await chromium.launch({
 
 const page = await browser.newPage({
   viewport: { width: WIDTH, height: HEIGHT },
-  deviceScaleFactor: 1,
+  deviceScaleFactor: DPR,
 })
 
 const errors = []
@@ -228,10 +249,6 @@ const failures = []
 
 for (const name of poseNames) {
   const pose = POSES[name]
-  if (!pose) {
-    console.warn(`⚠ unknown pose "${name}" — skipping`)
-    continue
-  }
   const ok = await page.evaluate(
     ([az, el, dist, target]) =>
       typeof window.__msxCamera === 'function'
@@ -266,11 +283,11 @@ for (const name of poseNames) {
   const facingScreen = azimuthDeg <= 100 || azimuthDeg >= 260
   const gated =
     VERIFY && POWER_ON && facingScreen && stats !== null && stats.coverage >= SCREEN_MIN_COVERAGE
-  const lit = stats !== null && stats.mean >= SCREEN_MIN_MEAN && stats.max >= SCREEN_MIN_PEAK
+  const lit = stats !== null && stats.mean >= SCREEN_MIN_MEAN && stats.p99 >= SCREEN_MIN_P99
   if (gated && !lit) {
     failures.push(
       `${name}: screen ROI is dark — mean ${stats.mean.toFixed(1)} (min ${SCREEN_MIN_MEAN}), ` +
-        `peak ${stats.max} (min ${SCREEN_MIN_PEAK})`,
+        `p99 ${stats.p99} (min ${SCREEN_MIN_P99})`,
     )
   }
 
@@ -294,11 +311,19 @@ for (const name of poseNames) {
   })
   console.log(
     `  ${gated && !lit ? '✗' : '✓'} ${name}` +
-      (stats === null ? '' : `  (tela: média ${stats.mean.toFixed(1)}, pico ${stats.max})`),
+      (stats === null ? '' : `  (tela: média ${stats.mean.toFixed(1)}, p99 ${stats.p99})`),
   )
 }
 
 const gpu = await rendererInfo(page)
+const actualViewport = await page.evaluate(() => ({
+  width: window.innerWidth,
+  height: window.innerHeight,
+  deviceScaleFactor: window.devicePixelRatio,
+  rendererPixelRatio: window.__msx?.engine.renderer.getPixelRatio() ?? null,
+  drawingBufferWidth: window.__msx?.engine.renderer.domElement.width ?? null,
+  drawingBufferHeight: window.__msx?.engine.renderer.domElement.height ?? null,
+}))
 await browser.close()
 
 // Provenance travels with the batch: a reviewer opens this before the PNGs.
@@ -306,14 +331,15 @@ await writeSidecar(OUT, {
   capturedAt: new Date().toISOString(),
   gitSha: await gitSha(),
   url: URL_,
-  viewport: { width: WIDTH, height: HEIGHT },
+  viewport: { width: WIDTH, height: HEIGHT, deviceScaleFactor: DPR },
+  actualViewport,
   power: POWER_ON ? 'on' : 'off',
   compiled: true,
   consoleErrors: [...new Set(errors)].slice(0, 20),
   gpu,
   thresholds: {
     screenMinMean: SCREEN_MIN_MEAN,
-    screenMinPeak: SCREEN_MIN_PEAK,
+    screenMinP99: SCREEN_MIN_P99,
     screenMinCoverage: SCREEN_MIN_COVERAGE,
   },
   shots,

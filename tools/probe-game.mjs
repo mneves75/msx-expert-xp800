@@ -220,12 +220,30 @@ const stick = await page.evaluate(() => {
   if (found === null) return null
   found.updateWorldMatrix(true, false)
   const v = window.__msx.engine.camera.position.clone()
+  v.setFromMatrixPosition(found.matrixWorld)
+  window.__msxCamera({
+    azimuth: 0,
+    elevation: 55,
+    distance: 0.45,
+    target: [v.x, v.y, v.z],
+  })
+  found.updateWorldMatrix(true, false)
   v.setFromMatrixPosition(found.matrixWorld).project(window.__msx.engine.camera)
   return { x: (v.x + 1) / 2, y: (1 - v.y) / 2 }
 })
 if (stick === null) {
   check('manche 3D encontrado', false)
 } else {
+  const stickInView = stick.x >= 0 && stick.x <= 1 && stick.y >= 0 && stick.y <= 1
+  check(
+    'manche 3D visível para o arrasto',
+    stickInView,
+    `x=${stick.x.toFixed(3)} y=${stick.y.toFixed(3)}`,
+  )
+  if (!stickInView) {
+    await browser.close()
+    process.exit(1)
+  }
   // O passo é auto-suficiente contra corridas: espera a partida corrente morrer
   // (vida máxima ~2,1 s até a parede direita), reinicia com o mouse JÁ sobre o
   // manche e engata o arrasto imediatamente — a medição cai no início da vida.
