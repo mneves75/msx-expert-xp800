@@ -15,8 +15,9 @@ import type { PostFX } from './PostFX'
  *
  *   tier 0  perfil `high` (estado de nascimento)
  *   tier 1  perfil `low`
- *   tier 2  perfil `low` + teto de pixel ratio em 0,75 × DPR
- *   tier 3  perfil `low` + teto de pixel ratio em 0,50 × DPR
+ *   tier 2  perfil `low` + AO desligado
+ *   tier 3  perfil `low` + AO desligado + teto de pixel ratio em 0,75 × DPR
+ *   tier 4  perfil `low` + AO desligado + teto de pixel ratio em 0,50 × DPR
  *
  * Sem degrau de subida não existe oscilação por construção — o preço é que uma
  * máquina que melhora no meio da sessão (fecha um jogo, liga o carregador) fica um
@@ -35,7 +36,7 @@ import type { PostFX } from './PostFX'
  * para as tools e para A/B manual de degraus no console.
  */
 
-export type AdaptiveTier = 0 | 1 | 2 | 3
+export type AdaptiveTier = 0 | 1 | 2 | 3 | 4
 
 export interface AdaptiveQualityHandle {
   /** Degrau atual (0 = qualidade plena). */
@@ -90,20 +91,21 @@ export function createAdaptiveQuality(
    * Pixel ratio EFETIVO no momento em que a escada entra nos degraus de resolução —
    * já composto com `maxPixelRatio` do Engine (num DPR 3 com teto 2, 0,75 × DPR
    * seria 2,25: um degrau no-op que gastaria rung, cooldown e realocação sem
-   * reduzir carga nenhuma). Reamostrado a cada entrada vinda de tier ≤ 1.
+   * reduzir carga nenhuma). Reamostrado a cada entrada vinda de tier ≤ 2.
    */
   let resolutionBase: number | null = null
 
   function applyTier(next: AdaptiveTier): void {
-    if (next >= 2 && resolutionBase === null) resolutionBase = engine.renderer.getPixelRatio()
-    if (next < 2) resolutionBase = null
+    if (next >= 3 && resolutionBase === null) resolutionBase = engine.renderer.getPixelRatio()
+    if (next < 3) resolutionBase = null
     tier = next
     postFX?.setQuality(next === 0 ? 'high' : 'low')
+    postFX?.setAOEnabled(next < 2)
     // Teto ABSOLUTO derivado do ratio efetivo do momento da transição; não persegue
     // mudanças de tela depois disso — quem arrasta a janela para outro monitor no
     // meio de uma sessão já degradada fica com o teto antigo até recarregar.
     const base = resolutionBase ?? engine.renderer.getPixelRatio()
-    engine.setAdaptivePixelRatioCap(next >= 2 ? base * (next === 2 ? 0.75 : 0.5) : null)
+    engine.setAdaptivePixelRatioCap(next >= 3 ? base * (next === 3 ? 0.75 : 0.5) : null)
   }
 
   function reset(discardNext: number): void {
@@ -153,7 +155,7 @@ export function createAdaptiveQuality(
     // Energy Saver que liga NO MEIO da sessão, quando o piso de 60 Hz já não vale.
     const cadenceLocked = p75 - p10 < 3
 
-    if (p75 > threshold && !cadenceLocked && tier < 3) {
+    if (p75 > threshold && !cadenceLocked && tier < 4) {
       const next = (tier + 1) as AdaptiveTier
       console.info(
         `[AdaptiveQuality] p75 ${p75.toFixed(1)} ms > ${threshold.toFixed(1)} ms — ` +
@@ -194,7 +196,7 @@ export function createAdaptiveQuality(
       // degrau (nem para cima: subir realoca buffers e muda pixels do mesmo jeito).
       const n = Number(wanted)
       const clamped = (
-        Number.isFinite(n) ? Math.min(3, Math.max(0, Math.floor(n))) : tier
+        Number.isFinite(n) ? Math.min(4, Math.max(0, Math.floor(n))) : tier
       ) as AdaptiveTier
       if (clamped !== tier) applyTier(clamped)
     },

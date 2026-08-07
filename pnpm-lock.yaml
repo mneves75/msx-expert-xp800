@@ -11,6 +11,9 @@ importers:
 
   .:
     dependencies:
+      n8ao:
+        specifier: 2.0.0
+        version: 2.0.0(postprocessing@6.39.3(three@0.185.1))(three@0.185.1)
       postprocessing:
         specifier: 6.39.3
         version: 6.39.3(three@0.185.1)
@@ -742,6 +745,12 @@ packages:
     resolution: {integrity: sha512-AfMrnQbJg81ESsGkGhOkHBtwTqCG+mosR+3GE+qDrhF1I/ieIvgg3ICxNyBvgHBZ3iapy6cysBQHNPykkzrfgw==}
     engines: {node: '>=22.0.0'}
 
+  n8ao@2.0.0:
+    resolution: {integrity: sha512-7oajUGXk10jJIcjGxOgjRY2X/gy5wiLOY4eOiAfFJ51ljN6Djmsg+j8HMOip+SpqV7OkwzF9VCkDRLluxVlySA==}
+    peerDependencies:
+      postprocessing: '>=6.30.0'
+      three: '>=0.137'
+
   nanoid@3.3.16:
     resolution: {integrity: sha512-bzlKTyNJ7+LdGIIwy8ijFpIqEQIvafahV7eYykJ8Cvh42EdJeODoJ6gUJXpQJvej1BddH8OqTXZNE/KfbWAu8Q==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
@@ -1386,6 +1395,11 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+
+  n8ao@2.0.0(postprocessing@6.39.3(three@0.185.1))(three@0.185.1):
+    dependencies:
+      postprocessing: 6.39.3(three@0.185.1)
+      three: 0.185.1
 
   nanoid@3.3.16: {}
 

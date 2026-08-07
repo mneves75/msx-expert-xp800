@@ -20,6 +20,7 @@
  *   node tools/profile.mjs --label baseline      # -> .scratch/profile/baseline.json
  *   node tools/profile.mjs --width 390 --height 844 --dpr 3 --label iphone
  *   node tools/profile.mjs --frames 300 --cpu-ms 5000
+ *   node tools/profile.mjs --lock-tier 2 --label low-no-ao
  *
  * The page contract is the same one `shoot.mjs` drives: `window.__msxReady`,
  * `window.__msxCamera(pose)`, `window.__msx.{engine,postFX,interactions}`.
@@ -40,27 +41,44 @@ import {
 const args = process.argv.slice(2)
 const flag = (name, fallback) => {
   const i = args.indexOf(`--${name}`)
-  return i !== -1 && args[i + 1] ? args[i + 1] : fallback
+  if (i === -1) return fallback
+  const value = args[i + 1]
+  if (!value || value.startsWith('--')) {
+    console.error(`✗ --${name} requires a value`)
+    process.exit(2)
+  }
+  return value
 }
-const positiveNumberFlag = (name, fallback) => {
+const numberFlag = (name, fallback, { min = Number.MIN_VALUE, integer = false } = {}) => {
   const raw = flag(name, fallback)
   const value = Number(raw)
-  if (!Number.isFinite(value) || value <= 0) {
-    console.error(`✗ --${name} must be a positive number (got "${raw}")`)
-    process.exit(1)
+  if (!Number.isFinite(value) || value < min || (integer && !Number.isInteger(value))) {
+    console.error(`✗ --${name} must be ${integer ? 'an integer' : 'a number'} >= ${min} (got "${raw}")`)
+    process.exit(2)
   }
   return value
 }
 
 const URL_ = flag('url', 'http://localhost:5173/')
-const WIDTH = Number(flag('width', '1920'))
-const HEIGHT = Number(flag('height', '1080'))
-const DPR = positiveNumberFlag('dpr', '1')
+const WIDTH = numberFlag('width', '1920', { min: 1, integer: true })
+const HEIGHT = numberFlag('height', '1080', { min: 1, integer: true })
+const DPR = numberFlag('dpr', '1', { min: 0.1 })
 const LABEL = flag('label', 'profile')
 const OUT_DIR = resolve(flag('out', '.scratch/profile'))
-const RAF_FRAMES = Number(flag('frames', '240'))
-const BENCH_FRAMES = Number(flag('bench-frames', '60'))
-const CPU_MS = Number(flag('cpu-ms', '4000'))
+const RAF_FRAMES = numberFlag('frames', '240', { min: 6, integer: true })
+const BENCH_FRAMES = numberFlag('bench-frames', '60', { min: 1, integer: true })
+const CPU_MS = numberFlag('cpu-ms', '4000', { min: 1, integer: true })
+const LOCK_TIER = args.includes('--lock-tier')
+  ? numberFlag('lock-tier', '0', { min: 0, integer: true })
+  : null
+if (LOCK_TIER !== null && LOCK_TIER > 4) {
+  console.error(`✗ --lock-tier must be an integer from 0 to 4 (got "${LOCK_TIER}")`)
+  process.exit(2)
+}
+if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(LABEL)) {
+  console.error(`✗ --label must be a safe filename component (got "${LABEL}")`)
+  process.exit(2)
+}
 const HOST_LOAD_AVERAGE_AT_START = loadavg()
 
 await mkdir(OUT_DIR, { recursive: true })
@@ -111,11 +129,23 @@ await page
   .catch(() => undefined)
 await guard(() => assertPageHealthy(page, errors))
 
+if (LOCK_TIER !== null) {
+  await guard(async () => {
+    const applied = await page.evaluate((tier) => {
+      const adaptive = window.__msx?.adaptiveQuality
+      if (!adaptive) return false
+      adaptive.lock(tier)
+      return adaptive.locked && adaptive.tier === tier
+    }, LOCK_TIER)
+    if (!applied) throw new CaptureAbort(`adaptive-quality tier ${LOCK_TIER} was not applied`)
+  })
+}
+
 await page.evaluate(() => window.__msx?.engine.setPresentationRateLimited?.(false))
 await stage(page, { powerOn: false, showHud: false })
 
 const cameraPose = await page.evaluate(() => window.__msx?.cameraRig.getPose() ?? null)
-const screenRoi = await objectRoi(page, 'crt-screen')
+const screenRoi = await objectRoi(page, 'crt-screen', 0)
 await guard(() => {
   if (cameraPose === null) throw new CaptureAbort('responsive default camera pose is unavailable')
   if (
@@ -211,13 +241,13 @@ async function frameCounters() {
         return { label, drawCalls: info.render.calls }
       }
       const previous = Object.fromEntries(
-        ['normal', 'occlusionAndBloom', 'depthOfField', 'lensAndTone', 'antialias'].map((key) => [
+        ['ao', 'bloom', 'depthOfField', 'lensAndTone', 'antialias'].map((key) => [
           key,
           postFX.passes[key]?.enabled ?? null,
         ]),
       )
       const ladder = [step('cadeia completa (sombras congeladas)')]
-      for (const key of ['normal', 'occlusionAndBloom', 'depthOfField', 'lensAndTone', 'antialias']) {
+      for (const key of ['ao', 'bloom', 'depthOfField', 'lensAndTone', 'antialias']) {
         const pass = postFX.passes[key]
         if (!pass) continue
         pass.enabled = false
@@ -241,7 +271,7 @@ async function frameCounters() {
 /**
  * A/B bench of PostFX pass configurations against the *live* frame loop.
  *
- * Each configuration toggles `postFX.passes[key].enabled` and then samples real
+ * Each configuration overrides selected `postFX.passes[key].enabled` values and samples real
  * rAF-to-rAF deltas with vsync off, so the number includes everything a user pays for
  * that pass: JS per-pass overhead, submission, and GPU time under pipelining.
  *
@@ -252,15 +282,20 @@ async function frameCounters() {
  * a reliable completion barrier. Interleaving rounds did not save it. The live-loop
  * rAF measure is slower to run but reproduces what a user's frame actually costs.
  *
- * Configurations are measured in interleaved rounds (A,B,C, A,B,C, …) and reduced to
- * the per-config median-of-rounds mean, cancelling residual monotonic drift.
+ * Configurations are measured in rotating interleaved rounds (A,B,C, B,C,A, C,A,B, …)
+ * and reduced to the per-config median-of-rounds mean, cancelling order and monotonic drift.
  */
 async function benchPassConfigs(configs, { rounds, framesPerRound }) {
   const samples = Object.fromEntries(configs.map((c) => [c.name, []]))
-  for (let round = 0; round < rounds; round++) {
-    for (const cfg of configs) {
+  // Complete rotations put every configuration in every ordinal position once,
+  // cancelling the fixed-order bias that otherwise survives interleaving.
+  const balancedRounds = Math.ceil(rounds / configs.length) * configs.length
+  for (let round = 0; round < balancedRounds; round++) {
+    const offset = round % configs.length
+    const ordered = [...configs.slice(offset), ...configs.slice(0, offset)]
+    for (const cfg of ordered) {
       const mean = await page.evaluate(
-        ({ disabled, frames }) =>
+        ({ disabled, enabled, frames }) =>
           new Promise((done) => {
             const api = window.__msx
             if (!api?.postFX) {
@@ -270,6 +305,9 @@ async function benchPassConfigs(configs, { rounds, framesPerRound }) {
             const passes = api.postFX.passes
             const previous = {}
             for (const key of Object.keys(passes)) previous[key] = passes[key].enabled
+            for (const key of enabled) {
+              if (passes[key]) passes[key].enabled = true
+            }
             for (const key of disabled) {
               if (passes[key]) passes[key].enabled = false
             }
@@ -290,7 +328,7 @@ async function benchPassConfigs(configs, { rounds, framesPerRound }) {
             }
             requestAnimationFrame(tick)
           }),
-        { disabled: cfg.disabled, frames: framesPerRound },
+        { disabled: cfg.disabled, enabled: cfg.enabled ?? [], frames: framesPerRound },
       )
       if (mean !== null) samples[cfg.name].push(mean)
     }
@@ -357,6 +395,10 @@ const result = {
   })),
   cameraPose,
   screenRoi,
+  adaptiveQuality: await page.evaluate(() => {
+    const adaptive = window.__msx?.adaptiveQuality
+    return adaptive ? { tier: adaptive.tier, locked: adaptive.locked } : null
+  }),
   presentationRateLimited: false,
   host: {
     platform: process.platform,
@@ -405,21 +447,28 @@ console.log(`  cpu      : ${result.cpu.sampledMs} ms sampled over ${result.cpu.w
 const benches = await benchPassConfigs(
   [
     { name: 'fullChain', disabled: [] },
-    { name: 'minus:normal', disabled: ['normal'] },
-    { name: 'minus:occlusionAndBloom', disabled: ['occlusionAndBloom'] },
+    // Paired no-AO row; compare it with the baseline's
+    // `minus:normal+occlusionAndBloom` row.
+    { name: 'minus:ao', disabled: ['ao'] },
+    { name: 'minus:bloom', disabled: ['bloom'] },
     { name: 'minus:depthOfField', disabled: ['depthOfField'] },
     { name: 'minus:lensAndTone', disabled: ['lensAndTone'] },
     { name: 'minus:antialias', disabled: ['antialias'] },
-    // SSAO needs the normal pass; disabling the pair is the honest "no AO" number.
-    { name: 'minus:normal+occlusionAndBloom', disabled: ['normal', 'occlusionAndBloom'] },
     {
       name: 'renderPassOnly',
-      disabled: ['normal', 'occlusionAndBloom', 'depthOfField', 'lensAndTone', 'antialias'],
+      disabled: ['ao', 'bloom', 'depthOfField', 'lensAndTone', 'antialias'],
     },
   ],
   { rounds: 5, framesPerRound: Math.max(30, BENCH_FRAMES) },
 )
 result.gpuBench = benches
+result.aoPair = await benchPassConfigs(
+  [
+    { name: 'withAO', enabled: ['ao'], disabled: [] },
+    { name: 'noAO', disabled: ['ao'] },
+  ],
+  { rounds: 8, framesPerRound: Math.max(30, BENCH_FRAMES) },
+)
 result.host.loadAverageAtEnd = loadavg()
 
 console.log('  gpu bench (ms/frame, live-loop rAF A/B):')
@@ -427,6 +476,10 @@ for (const [name, ms] of Object.entries(benches)) {
   const delta = name === 'fullChain' || ms === null ? '' : `  (Δ ${(benches.fullChain - ms).toFixed(2)})`
   console.log(`    ${name.padEnd(32)} ${ms}${delta}`)
 }
+console.log(
+  `  ao pair  : with ${result.aoPair.withAO} ms, without ${result.aoPair.noAO} ms ` +
+    `(Δ ${(result.aoPair.withAO - result.aoPair.noAO).toFixed(3)})`,
+)
 
 await guard(() => assertPageHealthy(page, errors))
 await browser.close()

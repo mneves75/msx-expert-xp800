@@ -2,6 +2,7 @@ import { HalfFloatType, NoToneMapping, Uniform, Vector3, WebGLRenderTarget } fro
 
 import { yieldToMain } from './cooperative'
 import type { PerspectiveCamera, Scene, ToneMapping, WebGLRenderer } from 'three'
+import type { Pass } from 'postprocessing'
 import {
   BlendFunction,
   BloomEffect,
@@ -12,16 +13,17 @@ import {
   EffectPass,
   FXAAEffect,
   NoiseEffect,
-  NormalPass,
   RenderPass,
   SMAAEffect,
   SMAAPreset,
-  SSAOEffect,
   ToneMappingEffect,
   ToneMappingMode,
   VignetteEffect,
   VignetteTechnique,
 } from 'postprocessing'
+// n8ao@2.0.0 publishes JSDoc but no TypeScript declarations.
+// @ts-expect-error The typed boundary immediately below mirrors its published API.
+import { N8AOPostPass as UntypedN8AOPostPass } from 'n8ao'
 
 /**
  * Post-processing chain for the XP-800 scene (SPEC §7).
@@ -29,8 +31,8 @@ import {
  * Chain, in render order:
  *
  *   RenderPass                                   HDR scene, half-float, MSAA on `high`
- *   NormalPass                                   view-space normals, consumed by SSAO
- *   EffectPass[ SSAO, Bloom ]                    occlusion + screen/specular glow, still HDR
+ *   N8AOPostPass                                 depth-only occlusion, still HDR
+ *   EffectPass[ Bloom ]                          screen/specular glow, still HDR
  *   EffectPass[ DepthOfField ]                   f/5.6-grade defocus, machine stays sharp
  *   EffectPass[ ChromaticAberration, FilmGrain,
  *               Vignette, ToneMapping ]          lens + sensor artefacts, then AgX
@@ -50,11 +52,9 @@ import {
  *     the buffer SMAA reads is still linear-light, which compresses dark-on-dark
  *     contrast — and this scene is a dark machine against a dark void.
  *
- *  2. **SSAO and Bloom share one EffectPass.** BloomEffect samples the pass *input*
- *     for its luminance prefilter, so merging means it blooms the pre-occlusion image.
- *     With the threshold set high enough that only the CRT and specular hits survive,
- *     and AO only ever darkening creases that are far below that threshold, the two
- *     images are identical where it matters — and we save a full-screen buffer swap.
+ *  2. **Depth-only AO precedes Bloom.** N8AO reconstructs normals from the RenderPass
+ *     depth texture, avoiding a second scene submission. It modulates raw HDR radiance
+ *     before Bloom and the AgX tone curve, which is where physical occlusion belongs.
  *
  * Tone mapping is owned by `ToneMappingEffect` (AgX), so `createPostFX` forces
  * `renderer.toneMapping = NoToneMapping`. Never re-enable renderer-side tone mapping:
@@ -69,11 +69,35 @@ import {
 
 export type PostFXQuality = 'low' | 'high'
 
+interface N8AOConfiguration {
+  aoSamples: number
+  aoRadius: number
+  denoiseSamples: number
+  denoiseRadius: number
+  distanceFalloff: number
+  intensity: number
+  gammaCorrection: boolean
+  screenSpaceRadius: boolean
+  halfRes: boolean
+  depthAwareUpsampling: boolean
+  transparencyAware: boolean
+}
+
+interface N8AOPostPassHandle extends Pass {
+  readonly configuration: N8AOConfiguration
+}
+
+const N8AOPostPass = UntypedN8AOPostPass as unknown as new (
+  scene: Scene,
+  camera: PerspectiveCamera,
+  width?: number,
+  height?: number,
+) => N8AOPostPassHandle
+
 /** Individual effect handles, exposed for tuning during the critic loop. */
 export interface PostFXEffects {
   readonly smaa: SMAAEffect | null
   readonly antialias: SMAAEffect | FXAAEffect
-  readonly ssao: SSAOEffect
   readonly bloom: BloomEffect
   readonly depthOfField: DepthOfFieldEffect
   readonly chromaticAberration: RadialChromaticAberrationEffect
@@ -85,8 +109,8 @@ export interface PostFXEffects {
 /** Pass handles, exposed so the engine can toggle stages (wireframe/X-ray modes). */
 export interface PostFXPasses {
   readonly render: RenderPass
-  readonly normal: NormalPass
-  readonly occlusionAndBloom: EffectPass
+  readonly ao: N8AOPostPassHandle
+  readonly bloom: EffectPass
   readonly depthOfField: EffectPass
   readonly lensAndTone: EffectPass
   readonly antialias: EffectPass
@@ -112,6 +136,8 @@ export interface PostFX {
    * tier, nunca por quadro.
    */
   setQuality(quality: PostFXQuality): void
+  /** Enables or disables the single ambient-occlusion pass. */
+  setAOEnabled(on: boolean): void
   /**
    * World-space point the depth of field focuses on. `null` freezes the focus at the
    * current distance. Defaults to the centre of the main unit.
@@ -120,9 +146,7 @@ export interface PostFX {
   /** Photographic exposure applied by the AgX curve. 1.0 is neutral. */
   setExposure(exposure: number): void
   /**
-   * Re-derives the camera-dependent SSAO/DoF settings. Call after changing
-   * `camera.near` / `camera.far`; the world-space thresholds below are stored as
-   * normalised depths and go stale when the frustum changes.
+   * Re-derives the camera-dependent DoF settings. Call after changing the camera.
    */
   syncCamera(): void
   dispose(): void
@@ -131,13 +155,14 @@ export interface PostFX {
 interface QualityProfile {
   /** MSAA sample count on the composer's input buffer. */
   readonly multisampling: number
-  readonly normalResolutionScale: number
-  readonly ssaoResolutionScale: number
-  readonly ssaoSamples: number
-  readonly ssaoRings: number
-  /** Screen-space AO radius as a fraction of buffer height (SPEC: centimetre-scale). */
-  readonly ssaoRadius: number
-  readonly ssaoOpacity: number
+  readonly ao: boolean
+  readonly aoSamples: number
+  /** World-space AO radius in metres (SPEC: centimetre-scale). */
+  readonly aoRadius: number
+  readonly aoDenoiseSamples: number
+  readonly aoDenoiseRadius: number
+  readonly aoHalfResolution: boolean
+  readonly aoIntensity: number
   readonly bloomLevels: number
   readonly depthOfField: boolean
   readonly bokehScale: number
@@ -211,17 +236,18 @@ const MACHINE_CENTRE = new Vector3(0, 0.05, 0.12)
 const QUALITY_PROFILES: Record<PostFXQuality, QualityProfile> = {
   high: {
     multisampling: 4,
-    normalResolutionScale: 1,
-    ssaoResolutionScale: 1,
-    ssaoSamples: 12,
-    ssaoRings: 7,
-    // 0.019 * 1080 px ≈ 21 px ≈ 5 mm of subject at a typical framing. Deliberately
+    ao: true,
+    aoSamples: 12,
+    aoDenoiseSamples: 7,
+    aoDenoiseRadius: 12,
+    aoHalfResolution: false,
+    // 5 mm in world space at the subject. Deliberately
     // *tighter* than a general-purpose AO radius: this term exists for the seams, the
     // vent slots, the shell-overhang line and the last few millimetres before an object
     // meets the desk. A wide radius produces the soft grey wash that made everything in
     // the previous pass look like it was hovering.
-    ssaoRadius: 0.019,
-    ssaoOpacity: 1,
+    aoRadius: 0.005,
+    aoIntensity: 1.9,
     bloomLevels: 8,
     depthOfField: true,
     // A revisão do tubo mediu que nada no macro estava em foco e que a borda de
@@ -239,13 +265,14 @@ const QUALITY_PROFILES: Record<PostFXQuality, QualityProfile> = {
   },
   low: {
     multisampling: 0,
-    normalResolutionScale: 0.5,
-    ssaoResolutionScale: 0.5,
-    ssaoSamples: 6,
-    ssaoRings: 5,
+    ao: true,
+    aoSamples: 6,
+    aoDenoiseSamples: 5,
+    aoDenoiseRadius: 12,
+    aoHalfResolution: true,
     // Half-resolution AO needs a slightly wider kernel or it turns to noise.
-    ssaoRadius: 0.028,
-    ssaoOpacity: 0.9,
+    aoRadius: 0.007,
+    aoIntensity: 1.7,
     bloomLevels: 5,
     depthOfField: false,
     bokehScale: 0.4,
@@ -256,16 +283,6 @@ const QUALITY_PROFILES: Record<PostFXQuality, QualityProfile> = {
     grainOpacity: 0.03,
   },
 }
-
-/** Camera-frustum-dependent SSAO limits, in metres. Re-applied by `syncCamera`. */
-const SSAO_WORLD = {
-  /** Below this depth difference two samples are treated as the same surface. */
-  proximityThreshold: 0.012,
-  proximityFalloff: 0.03,
-  /** Distance from the camera at which AO fades out. Well past the whole set. */
-  distanceThreshold: 8,
-  distanceFalloff: 4,
-} as const
 
 /**
  * Depth of field at a *product-photography* aperture, in metres.
@@ -434,36 +451,28 @@ async function assemblePostFX(
   await yieldToMain()
   const renderPass = new RenderPass(scene, camera)
 
-  // SSAO needs view-space normals; the composer supplies depth on its own.
-  const normalPass = new NormalPass(scene, camera, {
-    resolutionScale: profile.normalResolutionScale,
-  })
+  // N8AO reconstructs normals from the RenderPass depth texture. Its world-space
+  // radius stays at ≈5 mm of subject, and it darkens raw HDR radiance before the
+  // downstream AgX tone curve. Never gamma-lift this intermediate buffer.
+  const aoPass = new N8AOPostPass(scene, camera)
+  aoPass.configuration.gammaCorrection = false
+  aoPass.configuration.screenSpaceRadius = false
+  aoPass.configuration.distanceFalloff = 1
+  aoPass.configuration.depthAwareUpsampling = true
+  // Every transparent material in the scene uses depthWrite=false. Automatic
+  // transparency handling would re-submit those meshes twice without adding AO depth.
+  aoPass.configuration.transparencyAware = false
 
-  await yieldToMain()
-  const ssao = new SSAOEffect(camera, normalPass.texture, {
-    samples: profile.ssaoSamples,
-    rings: profile.ssaoRings,
-    radius: profile.ssaoRadius,
-    // Screen-space AO on the raw HDR buffer, i.e. it darkens radiance before the
-    // tone curve — which is where occlusion physically belongs.
-    intensity: 1.9,
-    // A near-field bias this large is what stops occlusion from ever reaching the last
-    // millimetre before a contact, which is exactly where it must be darkest. Dropped
-    // to the smallest value that still keeps the depth-discontinuity halo away.
-    bias: 0.008,
-    fade: 0.012,
-    // Keeps AO off the emissive CRT and off blown speculars without killing it on
-    // the lit top face of the case.
-    luminanceInfluence: 0.4,
-    minRadiusScale: 0.14,
-    worldProximityThreshold: SSAO_WORLD.proximityThreshold,
-    worldProximityFalloff: SSAO_WORLD.proximityFalloff,
-    worldDistanceThreshold: SSAO_WORLD.distanceThreshold,
-    worldDistanceFalloff: SSAO_WORLD.distanceFalloff,
-    resolutionScale: profile.ssaoResolutionScale,
-    depthAwareUpsampling: true,
-  })
-  ssao.blendMode.opacity.value = profile.ssaoOpacity
+  function configureAO(next: QualityProfile): void {
+    aoPass.configuration.aoSamples = next.aoSamples
+    aoPass.configuration.aoRadius = next.aoRadius
+    aoPass.configuration.denoiseSamples = next.aoDenoiseSamples
+    aoPass.configuration.denoiseRadius = next.aoDenoiseRadius
+    aoPass.configuration.halfRes = next.aoHalfResolution
+    aoPass.configuration.intensity = next.aoIntensity
+  }
+
+  configureAO(profile)
 
   await yieldToMain()
   const bloom = new BloomEffect({
@@ -517,7 +526,7 @@ async function assemblePostFX(
   const { antialias, smaa } = createAntialiasEffect(renderer, profile)
 
   await yieldToMain()
-  const occlusionAndBloomPass = new EffectPass(camera, ssao, bloom)
+  const bloomPass = new EffectPass(camera, bloom)
   const depthOfFieldPass = new EffectPass(camera, depthOfField)
   const lensAndTonePass = new EffectPass(
     camera,
@@ -528,12 +537,13 @@ async function assemblePostFX(
   )
   const antialiasPass = new EffectPass(camera, antialias)
 
+  aoPass.enabled = profile.ao
   depthOfFieldPass.enabled = profile.depthOfField
 
   await yieldToMain()
   composer.addPass(renderPass)
-  composer.addPass(normalPass)
-  composer.addPass(occlusionAndBloomPass)
+  composer.addPass(aoPass)
+  composer.addPass(bloomPass)
   composer.addPass(depthOfFieldPass)
   composer.addPass(lensAndTonePass)
   composer.addPass(antialiasPass)
@@ -541,7 +551,6 @@ async function assemblePostFX(
   const effects: PostFXEffects = {
     smaa,
     antialias,
-    ssao,
     bloom,
     depthOfField,
     chromaticAberration,
@@ -552,26 +561,19 @@ async function assemblePostFX(
 
   const passes: PostFXPasses = {
     render: renderPass,
-    normal: normalPass,
-    occlusionAndBloom: occlusionAndBloomPass,
+    ao: aoPass,
+    bloom: bloomPass,
     depthOfField: depthOfFieldPass,
     lensAndTone: lensAndTonePass,
     antialias: antialiasPass,
   }
 
-  /**
-   * The world-space SSAO thresholds are stored internally as normalised depths derived
-   * from the camera frustum, so they must be re-applied whenever near/far change.
-   */
   function applyCameraDependentSettings(): void {
-    ssao.mainCamera = camera
     depthOfField.mainCamera = camera
+  }
 
-    const ssaoMaterial = ssao.ssaoMaterial
-    ssaoMaterial.worldProximityThreshold = SSAO_WORLD.proximityThreshold
-    ssaoMaterial.worldProximityFalloff = SSAO_WORLD.proximityFalloff
-    ssaoMaterial.worldDistanceThreshold = SSAO_WORLD.distanceThreshold
-    ssaoMaterial.worldDistanceFalloff = SSAO_WORLD.distanceFalloff
+  function setAOEnabled(on: boolean): void {
+    aoPass.enabled = on
   }
 
   function applyProfile(next: QualityProfile): void {
@@ -579,16 +581,11 @@ async function assemblePostFX(
     // O setter acima re-espelha as amostras nos DOIS buffers do ping-pong.
     stripOutputBufferMultisampling(composer)
 
-    normalPass.resolution.scale = next.normalResolutionScale
-
-    ssao.samples = next.ssaoSamples
-    ssao.rings = next.ssaoRings
-    ssao.radius = next.ssaoRadius
-    ssao.resolution.scale = next.ssaoResolutionScale
-    ssao.blendMode.opacity.value = next.ssaoOpacity
+    configureAO(next)
 
     bloom.mipmapBlurPass.levels = next.bloomLevels
 
+    setAOEnabled(next.ao)
     depthOfFieldPass.enabled = next.depthOfField
     depthOfField.bokehScale = next.bokehScale
     depthOfField.resolution.scale = next.dofResolutionScale
@@ -602,7 +599,6 @@ async function assemblePostFX(
       smaa.edgeDetectionMaterial.edgeDetectionThreshold = next.smaaEdgeThreshold
     }
 
-    // Radius and resolution changes invalidate the derived depth cutoffs.
     applyCameraDependentSettings()
   }
 
@@ -630,6 +626,7 @@ async function assemblePostFX(
       profile = QUALITY_PROFILES[next]
       applyProfile(profile)
     },
+    setAOEnabled,
     setFocusTarget(target: Vector3 | null): void {
       depthOfField.target = target === null ? null : target.clone()
     },
