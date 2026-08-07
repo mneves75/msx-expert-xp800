@@ -25,7 +25,7 @@ import type { PostFX } from './PostFX'
  * degrau conservador.
  *
  * Interação com o render-on-demand: a amostragem só conta quadros que o Engine
- * realmente apresentou (`willRender` no hook de frame). Cena ociosa não gera
+ * realmente apresentou (timestamp confirmado pelo `Engine`). Cena ociosa não gera
  * amostra nenhuma — logo não gera transição nenhuma. Correto por construção.
  *
  * Contrato de captura: sob automação (`navigator.webdriver`) o controlador nasce
@@ -63,10 +63,10 @@ const DEGRADE_MS = 22
  * visual; o custo é não adaptar num ambiente que nunca exibiu cadência melhor.
  */
 const FLOOR_HEADROOM = 1.35
-/** Amostras descartadas após o início — compilações e caches residuais do boot. */
-const DISCARD_AFTER_START = 120
 /** Amostras descartadas após resize / retorno de aba oculta (primeiro delta é falso). */
 const DISCARD_AFTER_DISTURBANCE = 30
+/** Amostras descartadas após o início — o controlador nasce depois do aquecimento. */
+const DISCARD_AFTER_START = DISCARD_AFTER_DISTURBANCE
 /** Delta acima disto é um stall de sistema (GC, troca de app), não um quadro típico. */
 const STALL_MS = 200
 /** Tempo mínimo entre transições — cada uma realoca buffers do composer. */
@@ -83,8 +83,7 @@ export function createAdaptiveQuality(
   const samples: number[] = []
   let discard = DISCARD_AFTER_START
   let cooldownUntil = 0
-  let lastTick = 0
-  let previousPresented = false
+  let lastSampledPresentation = 0
   /** Menor p10 de janela já observado — a cadência que a plataforma alcança. */
   let sessionFloorMs = Number.POSITIVE_INFINITY
   /**
@@ -117,23 +116,24 @@ export function createAdaptiveQuality(
     return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))] ?? 0
   }
 
-  engine.onFrame((_dt, _elapsed, willRender) => {
+  engine.onFrame(() => {
     if (disposed) return
-    // Relógio próprio: o dt do Engine é clampado em 1/15 s e mascararia a
-    // severidade real de um quadro de 200 ms.
-    const now = performance.now()
-    const delta = now - lastTick
-    lastTick = now
+    const presentedAt = engine.lastPresentedAt
+    if (presentedAt <= 0 || presentedAt === lastSampledPresentation) return
 
-    // A amostra `delta` mede o quadro anterior — só vale se ele foi apresentado.
+    // Relógio próprio: o dt do Engine é clampado em 1/15 s e mascararia a
+    // severidade real de um quadro de 200 ms. `lastPresentedAt` só avança depois
+    // de render bem-sucedido, então ticks pulados pelo teto de 60 Hz não entram.
+    const now = performance.now()
+    const delta = lastSampledPresentation > 0 ? presentedAt - lastSampledPresentation : 0
+    lastSampledPresentation = presentedAt
+
     const candidate =
-      previousPresented &&
       !locked &&
       delta > 0 &&
       delta < STALL_MS &&
       now >= cooldownUntil &&
       document.visibilityState === 'visible'
-    previousPresented = willRender
 
     if (!candidate) return
     if (discard > 0) {

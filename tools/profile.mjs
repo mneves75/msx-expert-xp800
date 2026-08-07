@@ -4,21 +4,21 @@
  *
  * Boots the app in GPU-backed headless Chromium (ANGLE → Metal on macOS, the same
  * backend Chrome uses on real hardware; on Windows the equivalent path is ANGLE → D3D11)
- * and measures three independent things, because each catches a cost the others miss:
+ * and measures four independent things, because each catches a cost the others miss:
  *
  *  1. **rAF frame times** — the real cadence of the frame loop, captured with vsync and
- *     the frame-rate limiter off so a cheap frame reads as cheap instead of as 16.7 ms.
- *  2. **Per-pass GPU cost** — a synchronous A/B bench: the frame loop is stopped, each
- *     optional PostFX pass is disabled one at a time, and `composer.render` is timed
- *     over N frames with `gl.finish()` forcing completion. The delta against the full
- *     chain is what that pass costs on this GPU.
- *  3. **CPU profile** — CDP `Profiler` sampling while the loop runs, aggregated by self
+ *     the browser and app presentation limits off so a cheap frame reads as cheap.
+ *  2. **Draw counters** — full, frozen-shadow and pass-by-pass scene submission cost.
+ *  3. **Interleaved pass A/B** — optional PostFX passes are disabled in rotating rounds
+ *     against the live loop, reducing sequential clock and thermal drift.
+ *  4. **CPU profile** — CDP `Profiler` sampling while the loop runs, aggregated by self
  *     time, so per-frame JavaScript work (module `update()`s, spring physics, the CRT
  *     phosphor sim) is attributed to real functions.
  *
  * Usage:
  *   node tools/profile.mjs                       # -> .scratch/profile/profile.json
  *   node tools/profile.mjs --label baseline      # -> .scratch/profile/baseline.json
+ *   node tools/profile.mjs --width 390 --height 844 --dpr 3 --label iphone
  *   node tools/profile.mjs --frames 300 --cpu-ms 5000
  *
  * The page contract is the same one `shoot.mjs` drives: `window.__msxReady`,
@@ -26,6 +26,7 @@
  */
 import { chromium } from 'playwright'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { cpus, loadavg } from 'node:os'
 import { resolve } from 'node:path'
 import { CaptureAbort, assertPageHealthy, gitSha, rendererInfo, stage } from './capture-guard.mjs'
 
@@ -34,15 +35,26 @@ const flag = (name, fallback) => {
   const i = args.indexOf(`--${name}`)
   return i !== -1 && args[i + 1] ? args[i + 1] : fallback
 }
+const positiveNumberFlag = (name, fallback) => {
+  const raw = flag(name, fallback)
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value <= 0) {
+    console.error(`✗ --${name} must be a positive number (got "${raw}")`)
+    process.exit(1)
+  }
+  return value
+}
 
 const URL_ = flag('url', 'http://localhost:5173/')
 const WIDTH = Number(flag('width', '1920'))
 const HEIGHT = Number(flag('height', '1080'))
+const DPR = positiveNumberFlag('dpr', '1')
 const LABEL = flag('label', 'profile')
 const OUT_DIR = resolve(flag('out', '.scratch/profile'))
 const RAF_FRAMES = Number(flag('frames', '240'))
 const BENCH_FRAMES = Number(flag('bench-frames', '60'))
 const CPU_MS = Number(flag('cpu-ms', '4000'))
+const HOST_LOAD_AVERAGE_AT_START = loadavg()
 
 /** Same framing shoot.mjs calls `hero` — the pose users actually spend time in. */
 const HERO = { azimuth: 38, elevation: 20, distance: 1.12, target: [0, 0.12, -0.06] }
@@ -63,7 +75,7 @@ const browser = await chromium.launch({
 
 const page = await browser.newPage({
   viewport: { width: WIDTH, height: HEIGHT },
-  deviceScaleFactor: 1,
+  deviceScaleFactor: DPR,
 })
 
 const errors = []
@@ -88,7 +100,7 @@ async function guard(fn) {
   }
 }
 
-console.log(`→ ${URL_}  (${WIDTH}×${HEIGHT}, label: ${LABEL})`)
+console.log(`→ ${URL_}  (${WIDTH}×${HEIGHT} @ ${DPR}x, label: ${LABEL})`)
 await page.goto(URL_, { waitUntil: 'networkidle', timeout: 60_000 })
 await page
   .waitForFunction(() => window.__msxReady === true, { timeout: 60_000 })
@@ -96,6 +108,7 @@ await page
 await guard(() => assertPageHealthy(page, errors))
 
 await page.evaluate((pose) => window.__msxCamera?.(pose), HERO)
+await page.evaluate(() => window.__msx?.engine.setPresentationRateLimited?.(false))
 
 /** Percentile over a sorted copy. */
 function stats(samples) {
@@ -312,7 +325,23 @@ const result = {
   capturedAt: new Date().toISOString(),
   gitSha: await gitSha(),
   url: URL_,
-  viewport: { width: WIDTH, height: HEIGHT },
+  viewport: { width: WIDTH, height: HEIGHT, deviceScaleFactor: DPR },
+  actualViewport: await page.evaluate(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    deviceScaleFactor: window.devicePixelRatio,
+    rendererPixelRatio: window.__msx?.engine.renderer.getPixelRatio() ?? null,
+    drawingBufferWidth: window.__msx?.engine.renderer.domElement.width ?? null,
+    drawingBufferHeight: window.__msx?.engine.renderer.domElement.height ?? null,
+  })),
+  presentationRateLimited: false,
+  host: {
+    platform: process.platform,
+    architecture: process.arch,
+    logicalCpus: cpus().length,
+    loadAverageAtStart: HOST_LOAD_AVERAGE_AT_START,
+    loadAverageAtEnd: [0, 0, 0],
+  },
   gpu: await rendererInfo(page),
 }
 
@@ -369,6 +398,7 @@ const benches = await benchPassConfigs(
   { rounds: 5, framesPerRound: Math.max(30, BENCH_FRAMES) },
 )
 result.gpuBench = benches
+result.host.loadAverageAtEnd = loadavg()
 
 console.log('  gpu bench (ms/frame, live-loop rAF A/B):')
 for (const [name, ms] of Object.entries(benches)) {

@@ -10,6 +10,7 @@ import {
   Effect,
   EffectComposer,
   EffectPass,
+  FXAAEffect,
   NoiseEffect,
   NormalPass,
   RenderPass,
@@ -70,7 +71,8 @@ export type PostFXQuality = 'low' | 'high'
 
 /** Individual effect handles, exposed for tuning during the critic loop. */
 export interface PostFXEffects {
-  readonly smaa: SMAAEffect
+  readonly smaa: SMAAEffect | null
+  readonly antialias: SMAAEffect | FXAAEffect
   readonly ssao: SSAOEffect
   readonly bloom: BloomEffect
   readonly depthOfField: DepthOfFieldEffect
@@ -310,6 +312,76 @@ function clampMultisampling(renderer: WebGLRenderer, requested: number): number 
   return Math.max(0, Math.min(requested, maxSamples))
 }
 
+function disposeSMAALookupTextures(smaa: SMAAEffect): void {
+  const material = smaa.weightsMaterial as unknown as {
+    searchTexture?: { dispose(): void } | null
+    areaTexture?: { dispose(): void } | null
+  }
+  material.searchTexture?.dispose()
+  material.areaTexture?.dispose()
+}
+
+function disposeFailedSMAA(smaa: SMAAEffect): void {
+  const events = smaa as unknown as {
+    addEventListener(type: 'load', listener: () => void): void
+  }
+  events.addEventListener('load', () => {
+    disposeSMAALookupTextures(smaa)
+  })
+  disposeSMAALookupTextures(smaa)
+  smaa.dispose()
+}
+
+function probeSMAA(renderer: WebGLRenderer, smaa: SMAAEffect): boolean {
+  let shaderFailed = false
+  const previousCheckShaderErrors = renderer.debug.checkShaderErrors
+  const previousShaderError = renderer.debug.onShaderError
+  const previousRenderTarget = renderer.getRenderTarget()
+  const previousActiveCubeFace = renderer.getActiveCubeFace()
+  const previousActiveMipmapLevel = renderer.getActiveMipmapLevel()
+  const probeTarget = new WebGLRenderTarget(16, 16, {
+    depthBuffer: false,
+    stencilBuffer: false,
+  })
+
+  try {
+    renderer.debug.checkShaderErrors = true
+    renderer.debug.onShaderError = (gl, program, glVertexShader, glFragmentShader) => {
+      shaderFailed = true
+      previousShaderError?.(gl, program, glVertexShader, glFragmentShader)
+    }
+    smaa.setSize(16, 16)
+    smaa.update(renderer, probeTarget, 0)
+    return !shaderFailed
+  } catch {
+    return false
+  } finally {
+    renderer.debug.checkShaderErrors = previousCheckShaderErrors
+    renderer.debug.onShaderError = previousShaderError
+    renderer.setRenderTarget(previousRenderTarget, previousActiveCubeFace, previousActiveMipmapLevel)
+    probeTarget.dispose()
+  }
+}
+
+function createAntialiasEffect(
+  renderer: WebGLRenderer,
+  profile: QualityProfile,
+): { antialias: SMAAEffect | FXAAEffect; smaa: SMAAEffect | null } {
+  const smaa = new SMAAEffect({
+    preset: profile.smaaPreset,
+    edgeDetectionMode: EdgeDetectionMode.COLOR,
+  })
+  smaa.edgeDetectionMaterial.edgeDetectionThreshold = profile.smaaEdgeThreshold
+
+  if (probeSMAA(renderer, smaa)) {
+    return { antialias: smaa, smaa }
+  }
+
+  console.warn('[PostFX] SMAA incompatível com este renderer; usando FXAA.')
+  disposeFailedSMAA(smaa)
+  return { antialias: new FXAAEffect(), smaa: null }
+}
+
 /**
  * Builds the composer and every effect in the chain.
  *
@@ -442,11 +514,7 @@ async function assemblePostFX(
   const toneMapping = new ToneMappingEffect({ mode: ToneMappingMode.AGX })
 
   await yieldToMain()
-  const smaa = new SMAAEffect({
-    preset: profile.smaaPreset,
-    edgeDetectionMode: EdgeDetectionMode.COLOR,
-  })
-  smaa.edgeDetectionMaterial.edgeDetectionThreshold = profile.smaaEdgeThreshold
+  const { antialias, smaa } = createAntialiasEffect(renderer, profile)
 
   await yieldToMain()
   const occlusionAndBloomPass = new EffectPass(camera, ssao, bloom)
@@ -458,7 +526,7 @@ async function assemblePostFX(
     vignette,
     toneMapping,
   )
-  const antialiasPass = new EffectPass(camera, smaa)
+  const antialiasPass = new EffectPass(camera, antialias)
 
   depthOfFieldPass.enabled = profile.depthOfField
 
@@ -472,6 +540,7 @@ async function assemblePostFX(
 
   const effects: PostFXEffects = {
     smaa,
+    antialias,
     ssao,
     bloom,
     depthOfField,
@@ -528,8 +597,10 @@ async function assemblePostFX(
 
     filmGrain.blendMode.opacity.value = next.grainOpacity
 
-    smaa.applyPreset(next.smaaPreset)
-    smaa.edgeDetectionMaterial.edgeDetectionThreshold = next.smaaEdgeThreshold
+    if (smaa !== null) {
+      smaa.applyPreset(next.smaaPreset)
+      smaa.edgeDetectionMaterial.edgeDetectionThreshold = next.smaaEdgeThreshold
+    }
 
     // Radius and resolution changes invalidate the derived depth cutoffs.
     applyCameraDependentSettings()

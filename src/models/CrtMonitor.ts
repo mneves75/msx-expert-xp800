@@ -1811,8 +1811,6 @@ class CrtMonitor implements CrtMonitorModule {
       metalness: 0,
       clearcoat: 1,
       clearcoatRoughness: 0.04,
-      transmission: 0.25,
-      thickness: 0.002,
       ior: 1.55,
     })
     this.ownedMaterials.push(ledMaterial)

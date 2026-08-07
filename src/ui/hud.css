@@ -699,6 +699,10 @@
 }
 
 @media (max-width: 46rem), (max-height: 30rem) and (pointer: coarse) {
+  .hud {
+    --hud-sheet: #090a0c;
+  }
+
   .hud::before {
     height: 6rem;
   }
@@ -731,8 +735,6 @@
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     background: var(--hud-sheet);
-    backdrop-filter: blur(24px) saturate(0.85);
-    -webkit-backdrop-filter: blur(24px) saturate(0.85);
     border-top: 1px solid var(--hud-line-strong);
     border-radius: 14px 14px 0 0;
     box-shadow: 0 -24px 60px -30px rgba(0, 0, 0, 1);

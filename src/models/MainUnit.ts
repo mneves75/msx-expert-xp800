@@ -2865,8 +2865,6 @@ export class MainUnitModule implements SceneModule {
       roughness: 0.16,
       metalness: 0,
       ior: 1.55,
-      transmission: 0.3,
-      thickness: mm(1.2),
       dithering: true,
     })
     this.ownedMaterials.push(lens)

@@ -60,6 +60,8 @@ export interface CameraRigOptions {
   readonly autoRotateSpeed?: number
   /** Seconds the auto-rotate takes to ramp from 0 to full speed. Default 2.2. */
   readonly autoRotateRamp?: number
+  /** Idle auto-rotate. Default false for reduced motion or coarse pointers, true otherwise. */
+  readonly autoRotate?: boolean
   /** Exponential damping rate (1/s). Higher = snappier. Default 9. */
   readonly damping?: number
   /** Pixels of pointer travel before a press is treated as a drag. Default 4. */
@@ -103,6 +105,14 @@ function readVec3(v: Vec3Like, out: THREE.Vector3): THREE.Vector3 {
   }
   const o = v as { readonly x: number; readonly y: number; readonly z: number }
   return out.set(o.x, o.y, o.z)
+}
+
+function defaultAutoRotate(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return true
+  return !(
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+    window.matchMedia('(pointer: coarse)').matches
+  )
 }
 
 interface PointerSample {
@@ -183,6 +193,7 @@ export class CameraRig {
     this.idleDelay = options.idleDelay ?? 8
     this.autoRotateSpeed = (options.autoRotateSpeed ?? 2.6) * DEG
     this.autoRotateRamp = options.autoRotateRamp ?? 2.2
+    this.autoRotateEnabled = options.autoRotate ?? defaultAutoRotate()
     this.damping = options.damping ?? 9
     this.dragThreshold = options.dragThreshold ?? 4
     this.panBounds =
@@ -261,6 +272,10 @@ export class CameraRig {
   setAutoRotate(enabled: boolean): void {
     this.autoRotateEnabled = enabled
     if (!enabled) this.idleTime = 0
+  }
+
+  get autoRotate(): boolean {
+    return this.autoRotateEnabled
   }
 
   get autoRotating(): boolean {

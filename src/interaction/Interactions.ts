@@ -242,6 +242,7 @@ interface MainUnitLike {
 /** The slice of `CameraRig` this module drives. Structural — never imported. */
 interface OrbitLike {
   enabled: boolean
+  readonly autoRotate?: boolean
   notifyInteraction(): void
   resetPose(immediate?: boolean): void
   setAutoRotate(enabled: boolean): void
@@ -282,6 +283,7 @@ interface CartridgeMetrics {
 
 const DEFAULT_METRICS: CartridgeMetrics = { nose: 0.035, depth: 0.03 }
 const CRT_DRAIN_EPSILON = 0.002
+const CRT_READY_WARMTH = 0.995
 
 // ---------------------------------------------------------------------------
 // Per-slot rig
@@ -533,6 +535,7 @@ class Interactions implements InteractionsModule {
     this.orbit = hasMethods(rig, ['notifyInteraction', 'resetPose', 'setAutoRotate'])
       ? (rig as unknown as OrbitLike)
       : null
+    this.autoRotate = this.orbit?.autoRotate ?? true
   }
 
   // ── SceneModule ────────────────────────────────────────────────────────────
@@ -637,7 +640,15 @@ class Interactions implements InteractionsModule {
     // Warmth changes every frame during the ramp; the HUD only needs to see it move,
     // so republish in coarse steps rather than sixty times a second.
     const cached = this.snapshotCache
-    if (cached === null || Math.abs(cached.power.warmth - this.warmth) > 0.02) this.publish()
+    const warmth = this.warmth
+    if (
+      cached === null ||
+      Math.abs(cached.power.warmth - warmth) > 0.02 ||
+      (warmth >= CRT_READY_WARMTH && cached.power.warmth < CRT_READY_WARMTH) ||
+      (warmth === 0 && cached.power.warmth !== 0)
+    ) {
+      this.publish()
+    }
 
     // ── Agregado de atividade (render-on-demand) ─────────────────────────────
     // Cada rig já sabe se está em repouso; aqui só se agrega. Molas de geometria

@@ -19,6 +19,8 @@ export const SHADOW_MAP_SIZE = 2048
  * frames — the Desk reads its contact shadows on rendered frame 8.
  */
 const WARM_FRAMES = 12
+const TARGET_PRESENTATION_MS = 1000 / 60
+const MAX_DRAWING_BUFFER_PIXELS = 2560 * 1440
 
 /**
  * Anything that can take over presentation from `renderer.render()`.
@@ -131,6 +133,10 @@ export class Engine {
   private ready = false
   /** Frames explicitly requested by `requestRender` that must still be presented. */
   private framesRequested = 0
+  private lastRafAt = 0
+  private presentationBudgetMs = TARGET_PRESENTATION_MS
+  private presentationRateLimited = true
+  private presentedAt = 0
   /** Reversible resolution cap owned by the adaptive-quality controller. */
   private adaptivePixelRatioCap: number | null = null
   /** Last presented camera state; a change means the frame must be presented. */
@@ -321,6 +327,8 @@ export class Engine {
   start(): void {
     if (this.running || this.disposed) return
     this.running = true
+    this.lastRafAt = 0
+    this.presentationBudgetMs = TARGET_PRESENTATION_MS
     // O aquecimento do boot renderiza com a cena parcialmente revelada e consome o
     // needsUpdate inicial — o primeiro quadro real precisa de um atlas completo.
     this.renderer.shadowMap.needsUpdate = true
@@ -336,6 +344,13 @@ export class Engine {
    */
   requestRender(frames = 1): void {
     this.framesRequested = Math.max(this.framesRequested, Math.max(1, Math.floor(frames)))
+  }
+
+  /** Desliga o teto de 60 Hz durante medições de custo bruto em `tools/profile.mjs`. */
+  setPresentationRateLimited(enabled: boolean): void {
+    this.presentationRateLimited = enabled
+    this.presentationBudgetMs = TARGET_PRESENTATION_MS
+    this.requestRender(2)
   }
 
   /**
@@ -367,6 +382,10 @@ export class Engine {
 
   get isReady(): boolean {
     return this.ready
+  }
+
+  get lastPresentedAt(): number {
+    return this.presentedAt
   }
 
   onResize(callback: (width: number, height: number, pixelRatio: number) => void): void {
@@ -407,6 +426,16 @@ export class Engine {
   private readonly tick = (): void => {
     if (!this.running) return
     this.rafId = requestAnimationFrame(this.tick)
+    const tickAt = performance.now()
+    if (this.lastRafAt > 0) {
+      this.presentationBudgetMs = Math.min(
+        TARGET_PRESENTATION_MS * 2,
+        this.presentationBudgetMs + tickAt - this.lastRafAt,
+      )
+    } else {
+      this.presentationBudgetMs = TARGET_PRESENTATION_MS
+    }
+    this.lastRafAt = tickAt
 
     // The previous frame has now been handed to the compositor.
     if (this.pendingReady) {
@@ -446,12 +475,18 @@ export class Engine {
       }
     }
 
-    const present =
+    const cameraChanged = this.cameraStateChanged()
+    const wantsPresentation =
       this.frames < WARM_FRAMES ||
       this.framesRequested > 0 ||
       modulesActive ||
       !this.cameraRig.isSettled ||
-      this.cameraStateChanged()
+      cameraChanged
+    if (!wantsPresentation) this.presentationBudgetMs = TARGET_PRESENTATION_MS
+    const present =
+      wantsPresentation &&
+      (!this.presentationRateLimited ||
+        this.presentationBudgetMs + 0.25 >= TARGET_PRESENTATION_MS)
 
     for (const callback of this.frameCallbacks) {
       try {
@@ -462,12 +497,15 @@ export class Engine {
     }
 
     if (!present) return
+    this.presentationBudgetMs = Math.max(0, this.presentationBudgetMs - TARGET_PRESENTATION_MS)
     if (this.framesRequested > 0) this.framesRequested -= 1
+    const presentationDt =
+      this.presentedAt > 0 ? Math.min((tickAt - this.presentedAt) / 1000, 1 / 15) : dt
 
     for (const module of this.modules) {
       if (!module.beforeRender || this.mutedUpdates.has(module)) continue
       try {
-        module.beforeRender(dt, elapsed)
+        module.beforeRender(presentationDt, elapsed)
       } catch (error) {
         this.mutedUpdates.add(module)
         console.error(
@@ -478,7 +516,7 @@ export class Engine {
     }
 
     try {
-      if (this.pipeline) this.pipeline.render(dt)
+      if (this.pipeline) this.pipeline.render(presentationDt)
       else this.renderer.render(this.scene, this.camera)
     } catch (error) {
       console.error('[Engine] erro de renderização:', error)
@@ -489,6 +527,13 @@ export class Engine {
         this.disposePipeline(failedPipeline)
         if (this.pipeline === failedPipeline) this.pipeline = null
         this.restoreDirectRendering()
+        try {
+          this.renderer.render(this.scene, this.camera)
+        } catch (directError) {
+          console.error('[Engine] erro no fallback de renderização direta:', directError)
+          this.stop()
+          return
+        }
       } else {
         this.stop()
         return
@@ -496,6 +541,8 @@ export class Engine {
     }
 
     this.frames += 1
+    this.presentedAt = tickAt
+    if (cameraChanged) this.commitCameraSnapshot()
     if (this.frames === 1) this.pendingReady = true
   }
 
@@ -515,11 +562,19 @@ export class Engine {
       const w = world[i] ?? 0
       const p = projection[i] ?? 0
       if (snapshot[i] !== w || snapshot[i + 16] !== p) changed = true
-      snapshot[i] = w
-      snapshot[i + 16] = p
+    }
+    return changed
+  }
+
+  private commitCameraSnapshot(): void {
+    const world = this.camera.matrixWorld.elements
+    const projection = this.camera.projectionMatrix.elements
+    const snapshot = this.cameraSnapshot
+    for (let i = 0; i < 16; i++) {
+      snapshot[i] = world[i] ?? 0
+      snapshot[i + 16] = projection[i] ?? 0
     }
     this.cameraSnapshotValid = true
-    return changed
   }
 
   private readonly onContextRestored = (): void => {
@@ -570,10 +625,12 @@ export class Engine {
   private viewportSize(): { width: number; height: number; pixelRatio: number } {
     const width = Math.max(1, this.container.clientWidth || window.innerWidth)
     const height = Math.max(1, this.container.clientHeight || window.innerHeight)
+    const ratioCap = Math.sqrt(MAX_DRAWING_BUFFER_PIXELS / (width * height))
     const pixelRatio = Math.min(
       window.devicePixelRatio || 1,
       this.maxPixelRatio,
       this.adaptivePixelRatioCap ?? Number.POSITIVE_INFINITY,
+      ratioCap,
     )
     return { width, height, pixelRatio }
   }

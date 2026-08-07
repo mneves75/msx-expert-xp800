@@ -654,12 +654,19 @@ export type ScreenPipelineOptions = CreateScreenSourceOptions
  * preferir — sempre antes do render principal.
  */
 export class ScreenPipeline implements ScreenSource {
+  private static readonly CRT_FRAME_INTERVAL = 1 / 60
+  private static readonly CRT_FRAME_TOLERANCE = 1 / 1000
+
   public readonly crt: CrtProcessor
   private readonly routed: RoutedScreenSource
   private readonly handle: ScreenSourceHandle
   private readonly renderer: THREE.WebGLRenderer | null
+  private readonly autoSizeCrt: boolean
   private readonly warmup = new CrtWarmup()
   private readonly onNotice: ((message: string) => void) | undefined
+  private crtFrameDebt = 0
+  private crtElapsed = 0
+  private crtDirty = true
   private processingFailed = false
   private disposed = false
 
@@ -668,12 +675,14 @@ export class ScreenPipeline implements ScreenSource {
       ...options,
       onSourceChanged: (source) => {
         this.crt.setSource(source.texture, source.width, source.height)
+        this.markCrtDirty()
         options.onSourceChanged?.(source)
       },
     }
     this.handle = createScreenSource(forward)
     this.routed = this.handle.source as RoutedScreenSource
     this.renderer = isWebGLRenderer(options.renderer) ? options.renderer : null
+    this.autoSizeCrt = this.renderer !== null && options.crt?.width === undefined && options.crt?.height === undefined
     this.onNotice = options.onNotice
     this.crt = new CrtProcessor(this.routed.texture, {
       sourceWidth: this.routed.width,
@@ -720,16 +729,19 @@ export class ScreenPipeline implements ScreenSource {
   public start(signal?: AbortSignal): Promise<void> {
     if (this.disposed) return Promise.reject(new Error('O pipeline de tela já foi descartado.'))
     this.warmup.powerOn()
+    this.markCrtDirty()
     return this.routed.start(signal)
   }
 
   public stop(): void {
     this.warmup.powerOff()
     this.routed.stop()
+    this.markCrtDirty()
   }
 
   public reset(): void {
     this.routed.reset()
+    this.markCrtDirty()
   }
 
   public sendKey(code: string, down: boolean): void {
@@ -752,12 +764,29 @@ export class ScreenPipeline implements ScreenSource {
     const size = this.crt.sourceSize
     if (size.x !== this.routed.width || size.y !== this.routed.height) {
       this.crt.setSource(this.routed.texture, this.routed.width, this.routed.height)
+      this.markCrtDirty()
     }
     // Com renderer próprio o passe do tubo anda sozinho; sem ele, quem compõe
     // chama `render()` no ponto que preferir do laço.
     if (this.renderer === null) return
-    this.crt.setWarmup(this.warmup.update(dt))
-    this.renderCrt(this.renderer, dt)
+    this.updateCrtSize(this.renderer)
+    const tickDt = Math.max(dt, 0)
+    this.crtFrameDebt += tickDt
+    this.crtElapsed += tickDt
+    if (
+      !this.crtDirty &&
+      this.crtFrameDebt + ScreenPipeline.CRT_FRAME_TOLERANCE <
+        ScreenPipeline.CRT_FRAME_INTERVAL
+    ) {
+      return
+    }
+    const renderDt = this.crtElapsed
+    this.crtElapsed = 0
+    if (this.crtDirty) this.crtFrameDebt = Math.min(this.crtFrameDebt, ScreenPipeline.CRT_FRAME_INTERVAL)
+    this.crtFrameDebt = Math.max(0, this.crtFrameDebt - ScreenPipeline.CRT_FRAME_INTERVAL)
+    this.crtDirty = false
+    this.crt.setWarmup(this.warmup.update(renderDt))
+    this.renderCrt(this.renderer, renderDt)
   }
 
   /** Liga a rampa 0→1 do tubo à sequência de energia (SPEC §8). */
@@ -768,10 +797,12 @@ export class ScreenPipeline implements ScreenSource {
   public setWarmup(value: number): void {
     this.warmup.set(value)
     this.crt.setWarmup(value)
+    this.markCrtDirty()
   }
 
   public setTuning(patch: Partial<CrtTuning>): void {
     this.crt.setTuning(patch)
+    this.markCrtDirty()
   }
 
   /**
@@ -780,7 +811,9 @@ export class ScreenPipeline implements ScreenSource {
    */
   public render(renderer: THREE.WebGLRenderer, dt: number): void {
     if (this.disposed) return
+    this.updateCrtSize(renderer)
     this.crt.setWarmup(this.warmup.update(dt))
+    this.crtDirty = false
     this.renderCrt(renderer, dt)
   }
 
@@ -798,11 +831,35 @@ export class ScreenPipeline implements ScreenSource {
     } catch (error) {
       if (this.routed.handleRuntimeFailure(error)) {
         this.crt.setSource(this.routed.texture, this.routed.width, this.routed.height)
+        this.markCrtDirty()
         return
       }
       this.processingFailed = true
       this.onNotice?.('O processamento do tubo falhou; a imagem foi preservada.')
       console.warn('[MSX] processamento do tubo interrompido após uma falha.', error)
+    }
+  }
+
+  private markCrtDirty(): void {
+    this.crtDirty = true
+  }
+
+  private updateCrtSize(renderer: THREE.WebGLRenderer): void {
+    if (!this.autoSizeCrt) return
+    const sourceWidth = Math.max(this.routed.width, 1)
+    const sourceHeight = Math.max(this.routed.height, 1)
+    const baseWidth = 1536
+    const baseHeight = 1152
+    const minScale = Math.max(
+      (sourceWidth * 2) / baseWidth,
+      (sourceHeight * 2) / baseHeight,
+    )
+    const scale = Math.min(
+      1,
+      Math.max(minScale, renderer.domElement.width / baseWidth),
+    )
+    if (this.crt.setSize(Math.round(baseWidth * scale), Math.round(baseHeight * scale))) {
+      this.markCrtDirty()
     }
   }
 }

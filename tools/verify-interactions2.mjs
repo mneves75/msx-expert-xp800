@@ -27,6 +27,14 @@ const out = await page.evaluate(async () => {
   o.earlyWarmth = S().power.warmth
   await wait(5000)
   o.lateWarmth = S().power.warmth
+  // Force the narrow boundary that the coarse 2% publication cadence used to miss.
+  // TS-private fields are intentionally inspected elsewhere in this probe too.
+  itx.crt.warmth = 0.99
+  itx.publish()
+  itx.crt.warmth = 0.996
+  itx.update(0)
+  o.readyWarmth = S().power.warmth
+  o.directReadyWarmth = itx.crt.power.warmth
   o.powerOn = S().power.on
   o.emulator = S().emulator
 
@@ -81,6 +89,7 @@ const out = await page.evaluate(async () => {
 
 check('I3a', 'power liga', out.powerOn === true)
 check('I3b', 'CRT warm-up é rampa', out.earlyWarmth < out.lateWarmth && out.earlyWarmth < 0.9, `${out.earlyWarmth.toFixed(2)}→${out.lateWarmth.toFixed(2)}`)
+check('I3e', 'CRT publica estado pronto', out.readyWarmth >= 0.995, `publicado=${out.readyWarmth.toFixed(3)} direto=${out.directReadyWarmth.toFixed(3)}`)
 check('I3c', 'fonte de tela ativa', out.emulator === 'webmsx' || out.emulator === 'procedural', String(out.emulator))
 check('I6', 'digitação tapKey ok', out.typedOk)
 check('I4a', 'inserir cartucho A reflete no estado', out.slotAAfterInsert !== null, String(out.slotAAfterInsert))

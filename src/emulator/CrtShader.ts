@@ -407,6 +407,13 @@ function readImageSize(texture: THREE.Texture): { width: number; height: number 
   return { width: candidate.width, height: candidate.height }
 }
 
+function normalizeTargetSize(width: number, height: number): { width: number; height: number } {
+  return {
+    width: Math.max(1, Math.round(Number.isFinite(width) ? width : 1)),
+    height: Math.max(1, Math.round(Number.isFinite(height) ? height : 1)),
+  }
+}
+
 /**
  * Reconhece um `WebGLRenderer` sem depender de `instanceof` — o objeto pode vir
  * de um `ModuleContext` montado por outra camada, e um teste estrutural é mais
@@ -520,12 +527,17 @@ export class CrtProcessor {
   private averagePending = false
   private elapsed = 0
   private frame = 0
+  private outputWidth: number
+  private outputHeight: number
   private primed = false
   private disposed = false
 
   public constructor(source: THREE.Texture, options: CrtProcessorOptions = {}) {
-    const width = options.width ?? 1536
-    const height = options.height ?? 1152
+    const output = normalizeTargetSize(options.width ?? 1536, options.height ?? 1152)
+    const width = output.width
+    const height = output.height
+    this.outputWidth = width
+    this.outputHeight = height
     this.tuning = { ...DEFAULT_CRT_TUNING, ...options.tuning }
 
     const measured = readImageSize(source)
@@ -737,10 +749,15 @@ export class CrtProcessor {
   }
 
   /** Redimensiona só o alvo de saída (o de fósforo segue a fonte). */
-  public setSize(width: number, height: number): void {
-    if (this.disposed) return
-    this.tubeTarget.setSize(width, height)
-    this.tubeUniforms.uOutputSize.value.set(width, height)
+  public setSize(width: number, height: number): boolean {
+    if (this.disposed) return false
+    const output = normalizeTargetSize(width, height)
+    if (output.width === this.outputWidth && output.height === this.outputHeight) return false
+    this.outputWidth = output.width
+    this.outputHeight = output.height
+    this.tubeTarget.setSize(output.width, output.height)
+    this.tubeUniforms.uOutputSize.value.set(output.width, output.height)
+    return true
   }
 
   /**

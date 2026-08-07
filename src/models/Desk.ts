@@ -470,6 +470,7 @@ class StudioDesk implements DeskModule {
   /** Desligado permanentemente se o passe falhar — a cena nunca cai por causa dele. */
   private reflectionBroken = false
   private frame = 0
+  private reflectionElapsed = 0
 
   private readonly uniforms = {
     uDeskReflectMatrix: { value: new THREE.Matrix4() },
@@ -886,13 +887,19 @@ class StudioDesk implements DeskModule {
     return false
   }
 
-  beforeRender(): void {
+  beforeRender(dt: number): void {
     // Roda imediatamente antes do render principal, só em quadros apresentados: a
     // câmera já está no lugar e nenhum passe de reflexo é gasto num quadro pulado.
     // `frame` conta quadros APRESENTADOS — o Engine garante WARM_FRAMES > 8, então a
     // leitura de contatos do frame 8 sempre acontece.
     const interval = this.opts.reflectionInterval
-    const due = this.frame < 2 || interval <= 1 || this.frame % interval === 0
+    let due = this.frame < 2 || interval <= 1
+    if (!due) {
+      const period = interval / 60
+      this.reflectionElapsed += dt
+      due = this.reflectionElapsed >= period
+      if (due) this.reflectionElapsed %= period
+    }
 
     // As pegadas só mudam quando alguém insere um cartucho ou move o joystick — mas o
     // módulo da mesa constrói antes de todos os outros, então a primeira leitura tem
