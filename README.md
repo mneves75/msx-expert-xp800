@@ -19,7 +19,7 @@ Inspired by [ps1-pi.vercel.app](https://ps1-pi.vercel.app/); built from scratch.
   are generated in code. There are no downloaded models, texture packs, or HDRIs; the
   project stays below 3 MB gzipped, excluding the runtime-loaded emulator.
 - **Authentic hardware:** a hi-fi-style console, detached 89-key keyboard with `Ç`,
-  ~15-inch CRT, joystick, cartridges, and the XP-800's real slot-cover soft reset.
+  ~21-inch CRT, joystick, cartridges, and the XP-800's real slot-cover soft reset.
 - **Cartridge-aware emulation:** empty slots use a built-in TMS9918 BASIC screen. Inserting
   a cartridge loads WebMSX with C-BIOS from a commit-pinned, SRI-verified CDN URL; ejecting
   the last cartridge returns to BASIC. No proprietary BIOS is shipped.

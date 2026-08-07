@@ -63,9 +63,9 @@ const VERIFY = !has('no-verify')
  */
 const SCREEN_MIN_MEAN = 60
 // 250 foi calibrado com o bloom antigo (limiar 1.0) inflando o pico. Com o bloom
-// contido em 1.45/0.6 (SPEC §7), um fósforo legitimamente aceso mede pico ~190 no
-// enquadramento do herói; a tela morta da rodada 2 media pico 12 — margem de sobra.
-const SCREEN_MIN_PEAK = 170
+// contido em 1.45/0.6 e o tubo 40 % maior, o herói legitimamente aceso mede pico
+// ~162; a tela morta da rodada 2 media pico 12 — ainda há mais de 12× de margem.
+const SCREEN_MIN_PEAK = 150
 /** Below this the screen is a detail in the frame, not the subject — don't gate on it. */
 const SCREEN_MIN_COVERAGE = 0.04
 /**
@@ -83,9 +83,9 @@ const FOV = Number(flag('fov', '0'))
  * Each is [azimuth°, elevation°, distance(m), target(x,y,z)].
  */
 const POSES = {
-  // Target raised/pulled back so the enlarged CRT (scale 1.16) sits whole in frame.
-  hero: [38, 20, 1.12, [0, 0.12, -0.06]],
-  front: [0, 10, 0.95, [0, 0.14, -0.12]],
+  // Target raised/pulled back so the enlarged CRT (scale 1.624) sits whole in frame.
+  hero: [38, 20, 1.12, [0, 0.24, -0.06]],
+  front: [0, 10, 0.99, [0, 0.23, -0.12]],
   // 3/4 from behind, not dead-on: the CRT stands directly behind the console, so an
   // azimuth-180 camera far enough out to frame the 0.40 m back panel would have to sit
   // inside the tube. 138° puts it ~0.19 m clear of the cabinet's right flank and still
@@ -102,7 +102,7 @@ const POSES = {
   keyboard: [12, 55, 0.45, [0, 0.015, 0.26]],
   'keyboard-macro': [8, 32, 0.22, [-0.08, 0.02, 0.25]],
   slots: [4, 18, 0.3, [0.02, 0.05, 0.15]],
-  screen: [2, 10, 0.58, [0, 0.27, -0.38]],
+  screen: [2, 10, 0.58, [0, 0.35, -0.38]],
   'screen-macro': [0, 4, 0.34, [0, 0.27, -0.38]],
   raking: [72, 6, 0.8, [0, 0.05, 0]],
   silhouette: [115, 12, 1.1, [0, 0.06, 0]],

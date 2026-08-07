@@ -178,9 +178,11 @@ shell/fascia seam. The machine is 41 years old, not showroom-fresh.
 
 ## 5. CRT monitor + screen
 
-Period composite monitor, **~15"**: scale **1.16** over the original ~13.2" build, per the
-2026-07-28 composition request; `z = −0.465` preserves the rear gap. Use deeply curved
-glass, a heavy bezel, and visible shadow mask around the emulator framebuffer.
+Period composite monitor, **~21.4"**: scale **1.624**, exactly 40% above the previous
+1.16 calibration, per the 2026-08-07 easy-viewing request. The table-level/front-face
+origin and `z = −0.465` keep the feet and console gap anchored while the cabinet grows
+upward, sideways, and rearward. Use deeply curved glass, a heavy bezel, and visible shadow
+mask around the emulator framebuffer.
 
 Conceptual screen pipeline, in optical order:
 1. Source framebuffer uses its native logical size: **272×208** for the classic
@@ -226,9 +228,12 @@ Studio void, like the reference site. Not a lit room — a photographic set.
 Tone mapping: **AgX**, exposure **0.72**. Physically-correct lights,
 `useLegacyLights = false`. Color management on, output sRGB.
 
-*Exposure 0.72 is measured, not aesthetic: `tools/tune-exposure.mjs` originally measured
-QWERTY at rgb(184,181,175) against `#B8B5AC` = rgb(184,181,172). At 1.0 the set ran half a
-stop hot and desaturated. Re-run the ROI sweep before changing it.*
+*Exposure 0.72 remains the global calibration, not an isolated keycap correction.
+`tools/tune-exposure.mjs` originally measured QWERTY at rgb(184,181,175) against
+`#B8B5AC` = rgb(184,181,172); after later lighting changes the current readings are
+rgb(172,169,162) at 0.72 and rgb(184,181,175) at 1.0. Because 1.0 overexposes the wider
+set, fix the measured lighting distribution before changing exposure, then re-run both
+`tune-case.mjs` and the ROI sweep.*
 
 ## 7. Post-processing chain
 
@@ -307,6 +312,9 @@ triangles from **677,173 to 507,817**; at 390×844 DPR 1, scene calls fell from 
 71** and triangles from **584,617 to 445,825**. A requested mobile DPR 3 is capped to an
 effective DPR 2 and a 780×1688 drawing buffer. `tools/profile.mjs` records viewport,
 effective DPR, buffer dimensions, CPU count, and load average with every artifact.
+With the beta2 camera framing, the current default views measure **125** scene-only calls
+and **499,789** triangles at desktop DPR 1, and **71** calls / **424,385** triangles at
+mobile DPR 3. These counters are frustum-dependent; use an identical pose for A/B claims.
 
 ## 11. Quality bar
 

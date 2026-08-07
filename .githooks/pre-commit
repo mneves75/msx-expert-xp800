@@ -9,14 +9,9 @@
 # Enable in a fresh clone with:  git config core.hooksPath .githooks
 set -e
 
-if ! command -v ast-grep >/dev/null 2>&1; then
-  echo "pre-commit: ast-grep não encontrado — pulando o lint estrutural." >&2
-  exit 0
-fi
-
-if ! ast-grep scan; then
+if ! pnpm exec ast-grep scan; then
   echo "" >&2
   echo "✗ commit bloqueado: o linter estrutural achou erro(s)." >&2
-  echo "  Rode 'pnpm lint' para ver os detalhes." >&2
+  echo "  Rode 'pnpm install' e depois 'pnpm lint' para ver os detalhes." >&2
   exit 1
 fi

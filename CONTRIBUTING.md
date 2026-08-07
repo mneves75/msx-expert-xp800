@@ -24,7 +24,7 @@ pnpm install
 pnpm dev                               # http://localhost:5173
 pnpm verify                            # ast-grep + TypeScript
 pnpm build
-node tools/verify-interactions2.mjs   # 13 live interaction checks
+node tools/verify-interactions2.mjs   # 14 live interaction checks
 node tools/verify-keymap.mjs          # every modeled key and screen source
 node tools/shoot.mjs --pose hero      # inspect the result before submitting
 ```

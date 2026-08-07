@@ -79,9 +79,23 @@ const DEFAULT_POSE: Required<Omit<CameraPose, 'target'>> & {
   target: readonly [number, number, number]
 } = {
   azimuth: 38,
-  elevation: 22,
-  distance: 0.95,
-  target: [0, 0.06, 0],
+  elevation: 20,
+  distance: 1.12,
+  target: [0, 0.24, -0.06],
+}
+
+/** Front-on framing keeps the enlarged CRT screen inside a portrait viewport. */
+const PORTRAIT_POSE: typeof DEFAULT_POSE = {
+  azimuth: 0,
+  elevation: 10,
+  distance: 0.99,
+  target: [0, 0.23, -0.12],
+}
+
+function defaultPose(): typeof DEFAULT_POSE {
+  return typeof window !== 'undefined' && window.innerHeight > window.innerWidth
+    ? PORTRAIT_POSE
+    : DEFAULT_POSE
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -200,7 +214,7 @@ export class CameraRig {
       options.panBounds ??
       new THREE.Box3(new THREE.Vector3(-0.7, -0.05, -0.7), new THREE.Vector3(0.7, 0.55, 0.7))
 
-    const initial = options.initialPose ?? DEFAULT_POSE
+    const initial = options.initialPose ?? defaultPose()
     this.goalAzimuth = (initial.azimuth ?? DEFAULT_POSE.azimuth) * DEG
     this.goalElevation = (initial.elevation ?? DEFAULT_POSE.elevation) * DEG
     this.goalDistance = initial.distance ?? DEFAULT_POSE.distance

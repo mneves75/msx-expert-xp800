@@ -2,6 +2,7 @@
 # binaries and need their postinstall scripts to run. Without this, `pnpm install`
 # exits non-zero and every `pnpm typecheck` / `pnpm build` fails before it starts.
 allowBuilds:
+  '@ast-grep/cli': true
   esbuild: true
   sharp: true
   workerd: true

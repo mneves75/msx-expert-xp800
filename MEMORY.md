@@ -38,8 +38,9 @@ Curated project decisions and measurements. Read this with the newest
   light keycaps and washed out the QWERTY block.
 - Keycap roughness: **0.55 fresh / 0.36 worn**. The former 0.42/0.28 values produced
   excessive softbox glare; the 1985 ABS reference is more matte.
-- CRT: **scale 1.16**, `position.z = −0.465`, preserving the rear gap while making the
-  monitor dominate the composition.
+- CRT: **scale 1.624** (exactly 40% above 1.16), `position.z = −0.465`. Its
+  table-level/front-face origin keeps the feet and console gap anchored while making the
+  ~21.4-inch monitor easier to view.
 - Key travel: **2.6 mm**, confirmed numerically across all nine key classes.
 - Black keyboard panel: `#141414`, roughness **0.90**, specular intensity **0.08**. The
   reference remains black under flash; the former `#232323` and 0.80/0.30 response lifted
@@ -53,6 +54,9 @@ Curated project decisions and measurements. Read this with the newest
   **328/234 to 270/176**, and triangles from **584,617 to 445,825**.
 - A requested mobile DPR 3 resolves to renderer DPR 2 and a 780×1688 drawing buffer. The
   artifact records viewport, effective DPR, drawing buffer, CPU count, and load average.
+- With the beta2 camera framing, current scene-only counts are **125** at 1920×1080 DPR 1
+  and **71** at 390×844 DPR 3; both remain under the <150 budget. The counts are
+  frustum-dependent, so compare performance only at an identical pose.
 
 ## Open measured mismatches
 

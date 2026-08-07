@@ -176,10 +176,10 @@ export class Engine {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.toneMapping = options.toneMapping ?? THREE.AgXToneMapping
     this.directToneMapping = this.renderer.toneMapping
-    // 0,72 medido, não chutado: varredura de exposição com leitura de ROI sobre as
-    // capas QWERTY (tools/tune-exposure.mjs) — 0,72 põe a capa em rgb(184,181,175)
-    // contra o alvo da SPEC §3.2 rgb(184,181,172) (#B8B5AC). 1,0 estourava meio
-    // stop e dessaturava o conjunto (achado do crítico de iluminação, r1).
+    // 0,72 permanece como calibração global: após mudanças posteriores de iluminação,
+    // a medição atual é rgb(172,169,162), abaixo do alvo rgb(184,181,172). Exposição 1,0
+    // acerta as capas mas superexpõe o conjunto; corrija a distribuição de luz com
+    // tune-case/tune-exposure, não este valor isoladamente (SPEC §6, MEMORY).
     this.renderer.toneMappingExposure = options.exposure ?? 0.72
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = options.shadowMapType ?? THREE.PCFShadowMap

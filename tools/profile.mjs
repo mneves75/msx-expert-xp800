@@ -28,7 +28,14 @@ import { chromium } from 'playwright'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { cpus, loadavg } from 'node:os'
 import { resolve } from 'node:path'
-import { CaptureAbort, assertPageHealthy, gitSha, rendererInfo, stage } from './capture-guard.mjs'
+import {
+  CaptureAbort,
+  assertPageHealthy,
+  gitSha,
+  objectRoi,
+  rendererInfo,
+  stage,
+} from './capture-guard.mjs'
 
 const args = process.argv.slice(2)
 const flag = (name, fallback) => {
@@ -55,9 +62,6 @@ const RAF_FRAMES = Number(flag('frames', '240'))
 const BENCH_FRAMES = Number(flag('bench-frames', '60'))
 const CPU_MS = Number(flag('cpu-ms', '4000'))
 const HOST_LOAD_AVERAGE_AT_START = loadavg()
-
-/** Same framing shoot.mjs calls `hero` — the pose users actually spend time in. */
-const HERO = { azimuth: 38, elevation: 20, distance: 1.12, target: [0, 0.12, -0.06] }
 
 await mkdir(OUT_DIR, { recursive: true })
 
@@ -107,8 +111,25 @@ await page
   .catch(() => undefined)
 await guard(() => assertPageHealthy(page, errors))
 
-await page.evaluate((pose) => window.__msxCamera?.(pose), HERO)
 await page.evaluate(() => window.__msx?.engine.setPresentationRateLimited?.(false))
+await stage(page, { powerOn: false, showHud: false })
+
+const cameraPose = await page.evaluate(() => window.__msx?.cameraRig.getPose() ?? null)
+const screenRoi = await objectRoi(page, 'crt-screen')
+await guard(() => {
+  if (cameraPose === null) throw new CaptureAbort('responsive default camera pose is unavailable')
+  if (
+    screenRoi === null ||
+    screenRoi.x < 0 ||
+    screenRoi.y < 0 ||
+    screenRoi.x + screenRoi.width > 1 ||
+    screenRoi.y + screenRoi.height > 1
+  ) {
+    throw new CaptureAbort('responsive default clips the CRT screen', {
+      screenRoi: JSON.stringify(screenRoi),
+    })
+  }
+})
 
 /** Percentile over a sorted copy. */
 function stats(samples) {
@@ -334,6 +355,8 @@ const result = {
     drawingBufferWidth: window.__msx?.engine.renderer.domElement.width ?? null,
     drawingBufferHeight: window.__msx?.engine.renderer.domElement.height ?? null,
   })),
+  cameraPose,
+  screenRoi,
   presentationRateLimited: false,
   host: {
     platform: process.platform,
@@ -346,7 +369,6 @@ const result = {
 }
 
 // Power OFF, camera idle — the state the page boots into and idles in.
-await stage(page, { powerOn: false, showHud: false })
 await page.waitForTimeout(1200)
 result.counters = await frameCounters()
 console.log(

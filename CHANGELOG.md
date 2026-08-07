@@ -4,6 +4,14 @@ Notable changes are documented here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.0-beta2] — 2026-08-07
+
+### Changed
+
+- Increased the CRT scale exactly 40%, from 1.16 to 1.624 (about 15.3 to 21.4 inches), while preserving its table and console-gap anchors for easier viewing.
+- Reframed the default desktop and portrait cameras around the larger screen.
+- Made performance checks validate the app-selected responsive camera and made structural lint reproducible in clean clones.
+
 ## [0.2.0-beta1] — 2026-08-07
 
 ### Added
@@ -70,6 +78,7 @@ First public release.
 - Cloudflare response headers enforce CSP, HSTS, `nosniff`, frame denial, and immutable caching for hashed assets; CI actions are commit-pinned.
 - Reference photographs without redistribution licenses are excluded from the repository and fetched only for local comparison.
 
-[Unreleased]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta1...HEAD
+[Unreleased]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta2...HEAD
+[0.2.0-beta2]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta1...v0.2.0-beta2
 [0.2.0-beta1]: https://github.com/mneves75/msx-expert-xp800/compare/v0.1.0...v0.2.0-beta1
 [0.1.0]: https://github.com/mneves75/msx-expert-xp800/releases/tag/v0.1.0

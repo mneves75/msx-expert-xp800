@@ -70,7 +70,7 @@ Source inspection cannot judge this project. Use the tool whose trigger matches:
 | You changed / suspect… | Run | It tells you |
 |---|---|---|
 | Anything visible | `node tools/shoot.mjs` (15 poses; `--pose x,y` for a subset) | Renders + a lit-subject gate that fails the batch if the CRT is dark when it shouldn't be |
-| Interaction logic, power, cartridges, HUD state | `node tools/verify-interactions2.mjs` | 13 functional PASS/FAIL checks against the live app (I4c needs the CDN — it exercises the real WebMSX promotion) |
+| Interaction logic, power, cartridges, HUD state | `node tools/verify-interactions2.mjs` | 14 functional PASS/FAIL checks against the live app (I4c needs the CDN — it exercises the real WebMSX promotion) |
 | Keyboard layout or key mapping | `node tools/verify-keymap.mjs` | Every modeled key vs both screen sources (incl. `Ç` and `NumpadEqual`) |
 | Exposure, lighting, or tone mapping | `node tools/tune-exposure.mjs` | Measured keycap RGB vs the spec target at several exposures |
 | The deployed site | `node tools/verify-prod.mjs [url]` | Asserts CSP/HSTS/nosniff/X-Frame-Options on the real response, then that the emulator loads under that CSP, the tube warms, and a cartridge inserts — exiting non-zero on any failure |

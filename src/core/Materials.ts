@@ -278,7 +278,7 @@ export function createMaterialLibrary(renderer: THREE.WebGLRenderer): ManagedMat
         const m = plastic({
           name: `keycap-${hex.toString(16)}${worn ? '-worn' : ''}`,
           color: hex,
-          // SPEC §4: 0.42 nas teclas normais, 0.28 na barra de espaço e no Enter.
+          // SPEC §4: 0,55 nas teclas normais, 0,36 na barra de espaço e no Enter.
           roughness: worn ? ROUGHNESS.keycapWorn : ROUGHNESS.keycap,
           repeat: 0.6,
           // Polimento de dedo também achata o micro-relevo do ABS.

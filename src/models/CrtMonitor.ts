@@ -1,6 +1,6 @@
 /**
- * Monitor CRT de época (~14", vídeo composto) — o display que o Gradiente Expert
- * XP-800 aciona.
+ * Monitor CRT de época: geometria-base de ~14", ampliada globalmente para ~21,4"
+ * nesta composição — o display que o Gradiente Expert XP-800 aciona.
  *
  * O que faz um tubo parecer um tubo, e por que cada peça existe aqui:
  *
@@ -104,13 +104,12 @@ const DIM = {
    */
   place: { x: 0, y: 0, z: -0.465 },
   /**
-   * Escala global do conjunto (pedido do usuário: monitor maior e mais presente).
-   * 1,16 leva o tubo de ~13,2" para ~15,3" e a frente de 0,372 m para ~0,43 m —
-   * proporção típica de um monitor de vídeo-composto de 1985 sobre um console de
-   * 0,40 m. O recuo extra de `place.z` (−0,44 → −0,465) devolve o vão traseiro
-   * que o crescimento em profundidade consome.
+   * Escala global do conjunto (pedido do usuário: monitor 40% maior para leitura).
+   * 1,624 é exatamente 40 % acima da calibração anterior de 1,16: leva o tubo de
+   * ~15,3" para ~21,4" e a frente de ~0,43 m para ~0,60 m. A origem no nível da
+   * mesa e na face frontal mantém os pés e o vão para o console ancorados.
    */
-  scale: 1.16,
+  scale: 1.624,
 } as const
 
 /** Segmentos ao redor do perímetro. Governa o facetamento dos cantos arredondados. */
