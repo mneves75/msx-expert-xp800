@@ -1,7 +1,7 @@
 {
   "name": "msx-expert-xp800",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0-beta1",
   "type": "module",
   "description": "Interactive 3D replica of the Gradiente Expert XP-800 (Brazilian MSX, 1985) with a real MSX emulator on a period CRT",
   "license": "MIT",
@@ -22,7 +22,8 @@
     "lint": "ast-grep scan",
     "shoot": "node tools/shoot.mjs",
     "verify": "pnpm lint && pnpm typecheck",
-    "deploy": "pnpm build && wrangler deploy"
+    "deploy": "pnpm build && node node_modules/wrangler/bin/wrangler.js deploy",
+    "deploy:staging": "pnpm build && node node_modules/wrangler/bin/wrangler.js deploy --env staging"
   },
   "dependencies": {
     "postprocessing": "6.39.3",
@@ -33,7 +34,7 @@
     "playwright": "1.61.1",
     "typescript": "5.9.3",
     "vite": "8.1.5",
-    "wrangler": "4.115.0"
+    "wrangler": "4.119.0"
   },
   "packageManager": "pnpm@11.13.0"
 }

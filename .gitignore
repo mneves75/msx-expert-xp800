@@ -4,6 +4,16 @@ dist/
 .DS_Store
 *.log
 
+# Local configuration and private-key material must never enter the public repo.
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+*.pem
+*.key
+
 # Render captures from tools/shoot.mjs — regenerable, and they add up fast.
 shots/
 

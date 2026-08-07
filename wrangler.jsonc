@@ -13,5 +13,11 @@
 
   "observability": {
     "enabled": true
+  },
+
+  "env": {
+    "staging": {
+      "name": "msx-expert-xp800-staging"
+    }
   }
 }
