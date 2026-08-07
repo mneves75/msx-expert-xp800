@@ -2,6 +2,8 @@
 
 Notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
 ## [0.2.0-beta3] — 2026-08-07
 
 ### Added
