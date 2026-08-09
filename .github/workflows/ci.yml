@@ -20,7 +20,7 @@ jobs:
     steps:
       # Actions pinned by commit SHA: a tag (v4, v6…) is mutable and can silently start
       # pointing at different code — the SHA cannot.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         # Version is read from packageManager in package.json.
