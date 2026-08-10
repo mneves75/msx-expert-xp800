@@ -1,10 +1,12 @@
 # Performance Spec — Depth-Only AO and Real Pass Toggles
 
-Addendum (2026-08-10, v0.2.0-beta4): boot-time shader-compile latency on iOS Safari is
-addressed separately — per-module `compileAsync` submissions under
-`KHR_parallel_shader_compile` overlapped with texture upload and PostFX warm-up, and on
-coarse pointers the n8ao pass defers its compile past first reveal (see SPEC §7 and
-`CHANGELOG.md`). This document's pass-cost numbers are unaffected.
+Addendum (2026-08-10, v0.2.0-beta5): boot-time shader-compile latency on iOS Safari is
+addressed separately — on coarse pointers the n8ao pass defers its compile past first
+reveal (see SPEC §7 and `CHANGELOG.md`). A `compileAsync`/`KHR_parallel_shader_compile`
+variant shipped briefly in beta4 and was removed after a controlled cold A/B measured
+it as a net regression (24.6 s vs 19.9 s baseline on the iOS simulator): the programs
+it links are invalidated by light/shadow specializations, so boot paid generation
+twice. This document's pass-cost numbers are unaffected.
 
 Status: **implemented** (2026-08-07, v0.2.0-beta3). Phase 1 and Phase 2 landed as
 specified: `n8ao@2.0.0` replaced NormalPass+SSAOEffect, `setAOEnabled` +

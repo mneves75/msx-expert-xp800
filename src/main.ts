@@ -85,12 +85,12 @@ function showBootMessage(message: string): void {
  * Build one required module into the scene. A rejection aborts the bootstrap so
  * window.__msxReady can never describe a partial reconstruction.
  */
-async function register(engine: Engine, module: SceneModule): Promise<THREE.Group> {
+async function register(engine: Engine, module: SceneModule): Promise<void> {
   // Fronteira de tarefa entre módulos: junto com os geradores cooperativos das
   // texturas, é o que mantém o boot em fatias curtas (TBT ≈ 0) em vez de uma
   // tarefa longa única por módulo.
   await yieldToMain()
-  return engine.register(module)
+  await engine.register(module)
 }
 
 /**
@@ -120,47 +120,6 @@ async function preuploadTextures(engine: Engine): Promise<void> {
       // Upload adiantado é otimização: se falhar, o three sobe no primeiro uso.
     }
     await yieldToMain()
-  }
-}
-
-function createParallelCompiler(
-  engine: Engine,
-  isCancelled: () => boolean,
-): {
-  submit(root: THREE.Object3D): void
-  whenDone(): Promise<void>
-} {
-  const supported =
-    engine.renderer.getContext().getExtension('KHR_parallel_shader_compile') !== null
-  const compiles: Promise<unknown>[] = []
-  let started = false
-
-  return {
-    submit(root): void {
-      if (!supported || isCancelled()) return
-      if (!started) {
-        performance.mark('msx:compile-kickoff')
-        started = true
-      }
-      try {
-        compiles.push(
-          engine.renderer
-            .compileAsync(root, engine.camera, engine.scene)
-            .catch((error: unknown) => {
-              console.warn(
-                '[main] compilação paralela de shaders falhou — aquecimento fatiado continuará:',
-                error,
-              )
-            }),
-        )
-      } catch (error) {
-        console.warn(
-          '[main] compilação paralela de shaders falhou — aquecimento fatiado continuará:',
-          error,
-        )
-      }
-    },
-    whenDone: () => Promise.all(compiles).then(() => undefined),
   }
 }
 
@@ -419,7 +378,6 @@ async function bootstrap(): Promise<void> {
   try {
     engine.setMaterials(materials)
     const ctx: AppContext = engine.context
-    const parallelCompiler = createParallelCompiler(engine, () => application.isDisposed)
     const deferAOWarm =
       window.matchMedia('(pointer: coarse)').matches && navigator.webdriver !== true
 
@@ -435,29 +393,22 @@ async function bootstrap(): Promise<void> {
     if (application.isDisposed) return
 
     // Lighting first: every model samples `scene.environment` while building.
-    const lightingRoot = await register(engine, lightingModule)
+    await register(engine, lightingModule)
     if (application.isDisposed) return
-    parallelCompiler.submit(lightingRoot)
 
     // Back to front, so the scene graph reads the way the set is laid out.
-    const deskRoot = await register(engine, deskModule)
+    await register(engine, deskModule)
     if (application.isDisposed) return
-    parallelCompiler.submit(deskRoot)
-    const mainUnitRoot = await register(engine, MainUnit)
+    await register(engine, MainUnit)
     if (application.isDisposed) return
-    parallelCompiler.submit(mainUnitRoot)
-    const keyboardRoot = await register(engine, createKeyboard())
+    await register(engine, createKeyboard())
     if (application.isDisposed) return
-    parallelCompiler.submit(keyboardRoot)
-    const crtRoot = await register(engine, crtMonitorModule)
+    await register(engine, crtMonitorModule)
     if (application.isDisposed) return
-    parallelCompiler.submit(crtRoot)
-    const cartridgeRoot = await register(engine, CartridgeModule)
+    await register(engine, CartridgeModule)
     if (application.isDisposed) return
-    parallelCompiler.submit(cartridgeRoot)
-    const joystickRoot = await register(engine, joystick)
+    await register(engine, joystick)
     if (application.isDisposed) return
-    parallelCompiler.submit(joystickRoot)
 
     performance.mark('msx:modules-done')
     let postFX: PostFX
@@ -497,11 +448,14 @@ async function bootstrap(): Promise<void> {
 
     if (application.isDisposed) return
 
-    // Compila os programas da cena com KHR_parallel_shader_compile (o driver
-    // trabalha fora do main thread) e aquece cada passe do composer na sua
-    // própria fatia — atrás do véu opaco, então nenhum quadro de aquecimento é
-    // visível. Sem isto o primeiro quadro pagava TODOS os compiles de uma vez:
-    // a última tarefa longa do boot (~560 ms medidos em produção).
+    // Aquece geometria e cada passe do composer em fatias curtas — atrás do véu
+    // opaco, então nenhum quadro de aquecimento é visível. Sem isto o primeiro
+    // quadro pagava TODOS os compiles de uma vez. Nada de `renderer.compileAsync`
+    // aqui: foi tentado (submissão fatiada por módulo sob
+    // KHR_parallel_shader_compile) e MEDIDO pior no iOS — A/B frio no simulador
+    // 2026-08-10: 24,6 s contra 19,9 s do caminho fatiado. Os programas que ele
+    // liga não são os que os renders reais usam (especializações de luz/sombra
+    // recompilam), então o boot pagava a geração duas vezes.
     performance.mark('msx:preupload-done')
     const softwareRenderer = isSoftwareRenderer(engine.renderer)
     if (softwareRenderer) {
@@ -510,6 +464,14 @@ async function bootstrap(): Promise<void> {
       engine.capPixelRatio(0.5)
       console.info('[main] rasterizador de software detectado — resolução e qualidade reduzidas.')
     }
+
+    try {
+      await warmSceneBuffers(engine, () => application.isDisposed)
+    } catch (error) {
+      console.warn('[main] aquecimento da geometria falhou — upload no primeiro uso:', error)
+    }
+    if (application.isDisposed) return
+    performance.mark('msx:scenewarm-done')
 
     if (postFX !== null) {
       const warmPasses = postFX.composer.passes
@@ -548,22 +510,6 @@ async function bootstrap(): Promise<void> {
 
     if (application.isDisposed) return
     performance.mark('msx:fxwarm-done')
-
-    // Cada raiz foi submetida logo após seu registro, em tarefas já fatiadas.
-    // Enquanto texturas e passes PostFX ocupavam o main thread, o driver ligava
-    // os programas da cena em paralelo; só esperamos a ligação aqui. Os renders
-    // seguintes permanecem porque ainda sobem buffers e mapas de sombra.
-    await parallelCompiler.whenDone()
-    if (application.isDisposed) return
-    performance.mark('msx:link-done')
-
-    try {
-      await warmSceneBuffers(engine, () => application.isDisposed)
-    } catch (error) {
-      console.warn('[main] aquecimento da geometria falhou — upload no primeiro uso:', error)
-    }
-    if (application.isDisposed) return
-    performance.mark('msx:scenewarm-done')
 
     const hudCandidate = createHud(interactions)
     const hud: HudHandle | null = application.ownHud(hudCandidate) ? hudCandidate : null

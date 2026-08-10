@@ -4,6 +4,16 @@ Notable changes are documented here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.0-beta5] — 2026-08-10
+
+### Removed
+
+- The beta4 parallel shader compilation (`compileAsync` under `KHR_parallel_shader_compile`) — a controlled cold-cache A/B on the iOS simulator measured it as a net regression (24.6 s vs 19.9 s baseline to scene-ready): the programs it links are not the ones the real warm-up renders use, because light and shadow specializations recompile, so boot paid program generation twice. The sliced warm-up path is the boot compiler again.
+
+### Changed
+
+- The mobile AO deferral from beta4 is retained — it measured as the only net win (18.9 s cold vs 19.9 s baseline on the same device and load window, with warm visits around 2.2 s) and the AO fade-in lands about a second after the scene reveals.
+
 ## [0.2.0-beta4] — 2026-08-10
 
 ### Changed
