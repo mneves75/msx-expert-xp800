@@ -250,6 +250,15 @@ which preserves the scene on incompatible Safari/Metal paths without lowering ca
 browsers. Provenance: `PostFX.ts`, verified on Chromium and Safari/iOS 26.5/27 on
 2026-08-07.
 
+On coarse-pointer devices the AO pass — the largest shader program in the app — is not
+compiled during boot: the scene reveals without AO and the pass warms and joins the
+chain during idle time immediately after readiness, unless the adaptive ladder has
+already reached its AO-off tier (the ladder stays authoritative and monotone-down).
+Automation (`navigator.webdriver`) and fine-pointer devices keep AO from the first
+frame so captures stay deterministic. Provenance: `main.ts` deferred AO warm-up,
+measured on the iOS 27 simulator on 2026-08-10 (shader compilation was 73–85% of the
+cold boot; AO re-enabled ~0.5 s after reveal).
+
 Restraint is the rule: if a viewer can *name* the effect, it is turned up too high.
 
 Bloom is **threshold 1.45, intensity 0.6**; only CRT phosphor and metal speculars glow.

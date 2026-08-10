@@ -4,6 +4,8 @@ Notable changes are documented here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.0-beta4] — 2026-08-10
+
 ### Changed
 
 - Scene shader programs now compile in parallel with the rest of the boot through `KHR_parallel_shader_compile`: each module's subtree is submitted in its own slice right after registration and the driver links while textures upload and post-processing warms, with the previous sliced warm-up unchanged as the fallback when the extension is absent.
