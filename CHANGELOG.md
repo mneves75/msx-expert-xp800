@@ -4,6 +4,11 @@ Notable changes are documented here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Changed
+
+- Scene shader programs now compile in parallel with the rest of the boot through `KHR_parallel_shader_compile`: each module's subtree is submitted in its own slice right after registration and the driver links while textures upload and post-processing warms, with the previous sliced warm-up unchanged as the fallback when the extension is absent.
+- On coarse-pointer (mobile) devices the n8ao ambient-occlusion pass — the largest shader in the app — no longer compiles before the first frame: the scene reveals without AO and the pass warms and re-enables during idle time right after readiness, skipped permanently once the adaptive ladder reaches the AO-off tier. Capture and automation (`navigator.webdriver`) keep the previous frame-one-with-AO behavior.
+
 ## [0.2.0-beta3] — 2026-08-07
 
 ### Added

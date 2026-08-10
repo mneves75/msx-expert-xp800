@@ -85,12 +85,12 @@ function showBootMessage(message: string): void {
  * Build one required module into the scene. A rejection aborts the bootstrap so
  * window.__msxReady can never describe a partial reconstruction.
  */
-async function register(engine: Engine, module: SceneModule): Promise<void> {
+async function register(engine: Engine, module: SceneModule): Promise<THREE.Group> {
   // Fronteira de tarefa entre módulos: junto com os geradores cooperativos das
   // texturas, é o que mantém o boot em fatias curtas (TBT ≈ 0) em vez de uma
   // tarefa longa única por módulo.
   await yieldToMain()
-  await engine.register(module)
+  return engine.register(module)
 }
 
 /**
@@ -120,6 +120,47 @@ async function preuploadTextures(engine: Engine): Promise<void> {
       // Upload adiantado é otimização: se falhar, o three sobe no primeiro uso.
     }
     await yieldToMain()
+  }
+}
+
+function createParallelCompiler(
+  engine: Engine,
+  isCancelled: () => boolean,
+): {
+  submit(root: THREE.Object3D): void
+  whenDone(): Promise<void>
+} {
+  const supported =
+    engine.renderer.getContext().getExtension('KHR_parallel_shader_compile') !== null
+  const compiles: Promise<unknown>[] = []
+  let started = false
+
+  return {
+    submit(root): void {
+      if (!supported || isCancelled()) return
+      if (!started) {
+        performance.mark('msx:compile-kickoff')
+        started = true
+      }
+      try {
+        compiles.push(
+          engine.renderer
+            .compileAsync(root, engine.camera, engine.scene)
+            .catch((error: unknown) => {
+              console.warn(
+                '[main] compilação paralela de shaders falhou — aquecimento fatiado continuará:',
+                error,
+              )
+            }),
+        )
+      } catch (error) {
+        console.warn(
+          '[main] compilação paralela de shaders falhou — aquecimento fatiado continuará:',
+          error,
+        )
+      }
+    },
+    whenDone: () => Promise.all(compiles).then(() => undefined),
   }
 }
 
@@ -188,6 +229,51 @@ async function warmSceneBuffers(engine: Engine, isCancelled: () => boolean): Pro
     } catch (error) {
       console.warn('[main] restauração de tamanho pós-aquecimento falhou:', error)
     }
+  }
+}
+
+async function warmDeferredAOPass(
+  engine: Engine,
+  postFX: PostFX,
+  adaptiveQuality: AdaptiveQualityHandle,
+  isCancelled: () => boolean,
+): Promise<void> {
+  if (isCancelled() || adaptiveQuality.tier >= 2) return
+
+  const warmPasses = postFX.composer.passes
+  const enabledBefore = warmPasses.map((pass) => pass.enabled)
+  let restoreRatio: (() => void) | null = null
+  let warmed = false
+  try {
+    restoreRatio = engine.withPixelRatioCeiling(0.12)
+    for (const pass of warmPasses) pass.enabled = false
+    postFX.passes.ao.enabled = true
+    postFX.composer.render(0)
+    warmed = true
+  } catch (error) {
+    console.warn('[main] aquecimento adiado do AO falhou — AO permanecerá desligado:', error)
+  } finally {
+    warmPasses.forEach((pass, index) => {
+      pass.enabled = enabledBefore[index] ?? true
+    })
+    try {
+      restoreRatio?.()
+    } catch (error) {
+      warmed = false
+      console.warn('[main] resize pós-aquecimento do AO falhou — AO permanecerá desligado:', error)
+    }
+  }
+
+  if (!warmed || isCancelled() || adaptiveQuality.tier >= 2) return
+  await yieldToMain()
+  if (isCancelled() || adaptiveQuality.tier >= 2) return
+
+  try {
+    postFX.setAOEnabled(true)
+    engine.requestRender(2)
+  } catch (error) {
+    postFX.setAOEnabled(false)
+    console.warn('[main] ativação adiada do AO falhou — AO permanecerá desligado:', error)
   }
 }
 
@@ -333,6 +419,9 @@ async function bootstrap(): Promise<void> {
   try {
     engine.setMaterials(materials)
     const ctx: AppContext = engine.context
+    const parallelCompiler = createParallelCompiler(engine, () => application.isDisposed)
+    const deferAOWarm =
+      window.matchMedia('(pointer: coarse)').matches && navigator.webdriver !== true
 
     // Pré-aquecimento cooperativo das texturas caras: o trabalho é o mesmo,
     // mas em tarefas curtas — os builds abaixo acham tudo em cache. Falhar
@@ -346,23 +435,29 @@ async function bootstrap(): Promise<void> {
     if (application.isDisposed) return
 
     // Lighting first: every model samples `scene.environment` while building.
-    await register(engine, lightingModule)
+    const lightingRoot = await register(engine, lightingModule)
     if (application.isDisposed) return
+    parallelCompiler.submit(lightingRoot)
 
     // Back to front, so the scene graph reads the way the set is laid out.
-    await register(engine, deskModule)
+    const deskRoot = await register(engine, deskModule)
     if (application.isDisposed) return
-    await register(engine, MainUnit)
+    parallelCompiler.submit(deskRoot)
+    const mainUnitRoot = await register(engine, MainUnit)
     if (application.isDisposed) return
-    await register(engine, createKeyboard())
+    parallelCompiler.submit(mainUnitRoot)
+    const keyboardRoot = await register(engine, createKeyboard())
     if (application.isDisposed) return
-    await register(engine, crtMonitorModule)
+    parallelCompiler.submit(keyboardRoot)
+    const crtRoot = await register(engine, crtMonitorModule)
     if (application.isDisposed) return
-    await register(engine, CartridgeModule)
+    parallelCompiler.submit(crtRoot)
+    const cartridgeRoot = await register(engine, CartridgeModule)
     if (application.isDisposed) return
-    await register(engine, joystick)
-
+    parallelCompiler.submit(cartridgeRoot)
+    const joystickRoot = await register(engine, joystick)
     if (application.isDisposed) return
+    parallelCompiler.submit(joystickRoot)
 
     performance.mark('msx:modules-done')
     let postFX: PostFX
@@ -416,16 +511,6 @@ async function bootstrap(): Promise<void> {
       console.info('[main] rasterizador de software detectado — resolução e qualidade reduzidas.')
     }
 
-    // Nada de `renderer.compileAsync` aqui: a parte síncrona dele (gerar e
-    // submeter TODOS os programas) bloqueava ~270 ms num bloco só. Os renders
-    // em lote abaixo compilam os mesmos programas incrementalmente.
-    try {
-      await warmSceneBuffers(engine, () => application.isDisposed)
-    } catch (error) {
-      console.warn('[main] aquecimento da geometria falhou — upload no primeiro uso:', error)
-    }
-    if (application.isDisposed) return
-    performance.mark('msx:compile-done')
     if (postFX !== null) {
       const warmPasses = postFX.composer.passes
       const enabledBefore = warmPasses.map((pass) => pass.enabled)
@@ -439,6 +524,7 @@ async function bootstrap(): Promise<void> {
         for (const pass of warmPasses) pass.enabled = false
         for (const pass of warmPasses) {
           if (application.isDisposed) break
+          if (deferAOWarm && pass === postFX.passes.ao) continue
           pass.enabled = true
           postFX.composer.render(0)
           pass.enabled = false
@@ -461,8 +547,24 @@ async function bootstrap(): Promise<void> {
     }
 
     if (application.isDisposed) return
+    performance.mark('msx:fxwarm-done')
 
-    performance.mark('msx:warm-done')
+    // Cada raiz foi submetida logo após seu registro, em tarefas já fatiadas.
+    // Enquanto texturas e passes PostFX ocupavam o main thread, o driver ligava
+    // os programas da cena em paralelo; só esperamos a ligação aqui. Os renders
+    // seguintes permanecem porque ainda sobem buffers e mapas de sombra.
+    await parallelCompiler.whenDone()
+    if (application.isDisposed) return
+    performance.mark('msx:link-done')
+
+    try {
+      await warmSceneBuffers(engine, () => application.isDisposed)
+    } catch (error) {
+      console.warn('[main] aquecimento da geometria falhou — upload no primeiro uso:', error)
+    }
+    if (application.isDisposed) return
+    performance.mark('msx:scenewarm-done')
+
     const hudCandidate = createHud(interactions)
     const hud: HudHandle | null = application.ownHud(hudCandidate) ? hudCandidate : null
 
@@ -483,6 +585,7 @@ async function bootstrap(): Promise<void> {
     }
 
     if (application.isDisposed || activeApplication !== application) return
+    if (deferAOWarm) postFX.setAOEnabled(false)
 
     window.__msx = {
       engine,
@@ -500,6 +603,26 @@ async function bootstrap(): Promise<void> {
       if (application.isDisposed || activeApplication !== application) return
       window.__msxReady = true
       hideBootVeil()
+      if (deferAOWarm) {
+        const warmAO = (): void => {
+          if (
+            application.isDisposed ||
+            activeApplication !== application ||
+            adaptiveQuality === null ||
+            adaptiveQuality.tier >= 2
+          ) {
+            return
+          }
+          void warmDeferredAOPass(engine, postFX, adaptiveQuality, () =>
+            application.isDisposed || activeApplication !== application,
+          )
+        }
+        if (typeof window.requestIdleCallback === 'function') {
+          window.requestIdleCallback(warmAO)
+        } else {
+          window.setTimeout(warmAO, 250)
+        }
+      }
     })
     engine.start()
   } catch (error) {
