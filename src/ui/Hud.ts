@@ -565,6 +565,8 @@ class Hud implements HudHandle {
   private disposed = false
   private warnedNoBridge = false
   private sheetOpen = false
+  private sheetDrag: { readonly pointerId: number; readonly x: number; readonly y: number } | null =
+    null
   private chromeVisible = true
 
   private readonly mobileQuery: MediaQueryList | null
@@ -609,6 +611,10 @@ class Hud implements HudHandle {
     root.appendChild(brand)
 
     // ── Console ───────────────────────────────────────────────────────────────
+    const sheetBackdrop = el('div', 'hud__sheet-backdrop')
+    sheetBackdrop.setAttribute('aria-hidden', 'true')
+    root.appendChild(sheetBackdrop)
+
     const consoleEl = el('div', 'hud__console')
     consoleEl.id = 'hud-console'
     this.console = consoleEl
@@ -617,6 +623,7 @@ class Hud implements HudHandle {
     const grip = el('span', 'hud__sheet-grip')
     grip.setAttribute('aria-hidden', 'true')
     const sheetTitle = el('span', 'hud__group-title', TXT.sheetOpen)
+    sheetTitle.id = 'hud-sheet-title'
     this.sheetClose = el('button', 'hud__sheet-close')
     this.sheetClose.type = 'button'
     this.sheetClose.textContent = TXT.sheetClose
@@ -797,8 +804,12 @@ class Hud implements HudHandle {
     this.autoRotateButton.addEventListener('click', this.onAutoRotateClick)
     this.sheetToggle.addEventListener('click', this.onSheetOpen)
     this.sheetClose.addEventListener('click', this.onSheetClose)
+    sheetBackdrop.addEventListener('click', this.onSheetClose)
+    sheetHead.addEventListener('pointerdown', this.onSheetDragStart)
 
     window.addEventListener('keydown', this.onKeyDown, { capture: true })
+    window.addEventListener('pointerup', this.onSheetDragEnd)
+    window.addEventListener('pointercancel', this.onSheetDragCancel)
     window.addEventListener('msx:interactions', this.onBridgeAnnounced)
     window.addEventListener('msx:state', this.onStateAnnounced)
     this.mobileQuery?.addEventListener('change', this.onBreakpointChange)
@@ -1096,9 +1107,30 @@ class Hud implements HudHandle {
     this.sheetToggle.focus()
   }
 
+  private readonly onSheetDragStart = (event: PointerEvent): void => {
+    if (!this.sheetOpen || !this.isMobile || !event.isPrimary || event.button !== 0) return
+    this.sheetDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+  }
+
+  private readonly onSheetDragEnd = (event: PointerEvent): void => {
+    const start = this.sheetDrag
+    if (start === null || event.pointerId !== start.pointerId) return
+    this.sheetDrag = null
+    const dx = event.clientX - start.x
+    const dy = event.clientY - start.y
+    if (dy < 56 || dy <= Math.abs(dx)) return
+    event.preventDefault()
+    this.onSheetClose()
+  }
+
+  private readonly onSheetDragCancel = (event: PointerEvent): void => {
+    if (this.sheetDrag?.pointerId === event.pointerId) this.sheetDrag = null
+  }
+
   private setSheet(open: boolean): void {
     if (this.sheetOpen === open) return
     this.sheetOpen = open
+    if (!open) this.sheetDrag = null
     this.applySheet()
   }
 
@@ -1108,8 +1140,17 @@ class Hud implements HudHandle {
 
   private applySheet(): void {
     const mobile = this.isMobile
-    if (mobile) this.element.dataset['sheet'] = this.sheetOpen ? 'open' : 'closed'
-    else delete this.element.dataset['sheet']
+    if (mobile) {
+      this.element.dataset['sheet'] = this.sheetOpen ? 'open' : 'closed'
+      setAttr(this.console, 'role', 'dialog')
+      setAttr(this.console, 'aria-modal', 'true')
+      setAttr(this.console, 'aria-labelledby', 'hud-sheet-title')
+    } else {
+      delete this.element.dataset['sheet']
+      this.console.removeAttribute('role')
+      this.console.removeAttribute('aria-modal')
+      this.console.removeAttribute('aria-labelledby')
+    }
     // Fora da tela ⇒ fora da ordem de tabulação.
     this.console.toggleAttribute('inert', this.chromeVisible ? mobile && !this.sheetOpen : true)
     setAttr(this.sheetToggle, 'aria-expanded', this.sheetOpen ? 'true' : 'false')
@@ -1371,6 +1412,8 @@ class Hud implements HudHandle {
     }
     this.unsubscribe = null
     window.removeEventListener('keydown', this.onKeyDown, { capture: true })
+    window.removeEventListener('pointerup', this.onSheetDragEnd)
+    window.removeEventListener('pointercancel', this.onSheetDragCancel)
     window.removeEventListener('msx:interactions', this.onBridgeAnnounced)
     window.removeEventListener('msx:state', this.onStateAnnounced)
     this.mobileQuery?.removeEventListener('change', this.onBreakpointChange)

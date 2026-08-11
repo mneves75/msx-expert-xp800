@@ -665,6 +665,10 @@
   color: var(--hud-ink-mute);
 }
 
+.hud__sheet-backdrop {
+  display: none;
+}
+
 .hud__sheet-head {
   display: none;
   align-items: center;
@@ -721,6 +725,32 @@
 
   .hud__sheet-head {
     display: flex;
+    position: sticky;
+    top: -1rem;
+    z-index: 1;
+    margin-top: -1rem;
+    padding-top: 1rem;
+    background: var(--hud-sheet);
+    touch-action: none;
+    user-select: none;
+  }
+
+  .hud__sheet-backdrop {
+    position: absolute;
+    inset: 0;
+    display: block;
+    visibility: hidden;
+    background: rgba(0, 0, 0, 0.34);
+    opacity: 0;
+    pointer-events: auto;
+    transition:
+      opacity 220ms var(--hud-ease),
+      visibility 220ms;
+  }
+
+  .hud[data-sheet='open'] .hud__sheet-backdrop {
+    visibility: visible;
+    opacity: 1;
   }
 
   .hud__console {

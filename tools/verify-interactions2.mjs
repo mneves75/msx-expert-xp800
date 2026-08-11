@@ -260,6 +260,77 @@ check('I2', 'auto-rotação (flag)', out.autoRotate === true)
 check('I9', 'resetView existe e roda', out.resetView === true)
 check('I3d', 'desligar faz rampa', out.midOff > 0.02 && out.finalOff < 0.05, `mid=${out.midOff.toFixed(2)} final=${out.finalOff.toFixed(3)}`)
 
+// O painel mobile precisa continuar fechável depois de rolar: o cabeçalho fica visível,
+// tocar fora fecha e o grip aceita um gesto curto para baixo.
+const mobilePage = await browser.newPage({
+  viewport: { width: 390, height: 844 },
+  deviceScaleFactor: 3,
+  isMobile: true,
+  hasTouch: true,
+})
+await mobilePage.goto('http://localhost:5173/', { waitUntil: 'networkidle' })
+await mobilePage.waitForFunction(() => window.__msxReady === true, { timeout: 60_000 })
+await mobilePage.click('.hud__sheet-toggle')
+await mobilePage.waitForTimeout(400)
+const mobileSheet = await mobilePage.evaluate(() => {
+  const panel = document.querySelector('.hud__console')
+  const close = document.querySelector('.hud__sheet-close')
+  if (!(panel instanceof HTMLElement) || !(close instanceof HTMLElement)) return null
+  panel.scrollTop = 800
+  const rect = close.getBoundingClientRect()
+  return {
+    scrollTop: panel.scrollTop,
+    closeVisible: rect.bottom > 0 && rect.top < innerHeight,
+    backdropExists: document.querySelector('.hud__sheet-backdrop') instanceof HTMLElement,
+  }
+})
+check(
+  'I11a',
+  'fechar permanece visível após rolar o painel mobile',
+  mobileSheet?.scrollTop > 0 && mobileSheet.closeVisible === true,
+  JSON.stringify(mobileSheet),
+)
+check('I11b', 'painel mobile oferece fundo tocável para fechar', mobileSheet?.backdropExists === true)
+
+if (mobileSheet?.backdropExists === true) await mobilePage.mouse.click(195, 150)
+const closedByBackdrop = await mobilePage.getAttribute('.hud', 'data-sheet')
+check('I11c', 'toque fora fecha o painel mobile', closedByBackdrop === 'closed')
+
+if (closedByBackdrop !== 'closed') {
+  await mobilePage.evaluate(() => {
+    const close = document.querySelector('.hud__sheet-close')
+    if (close instanceof HTMLButtonElement) close.click()
+  })
+}
+await mobilePage.click('.hud__sheet-toggle')
+const closedBySwipe = await mobilePage.evaluate(() => {
+  const panel = document.querySelector('.hud__console')
+  const head = document.querySelector('.hud__sheet-head')
+  if (!(panel instanceof HTMLElement) || !(head instanceof HTMLElement)) return false
+  panel.scrollTop = 0
+  head.dispatchEvent(new PointerEvent('pointerdown', {
+    bubbles: true,
+    button: 0,
+    clientX: 195,
+    clientY: 320,
+    isPrimary: true,
+    pointerId: 11,
+    pointerType: 'touch',
+  }))
+  head.dispatchEvent(new PointerEvent('pointerup', {
+    bubbles: true,
+    button: 0,
+    clientX: 195,
+    clientY: 390,
+    isPrimary: true,
+    pointerId: 11,
+    pointerType: 'touch',
+  }))
+  return document.querySelector('.hud')?.getAttribute('data-sheet') === 'closed'
+})
+check('I11d', 'arrastar o grip para baixo fecha o painel mobile', closedBySwipe === true)
+await mobilePage.close()
+
 // Última sonda: destrutiva apenas para esta página descartável. Um PostFX quebrado
 // precisa parar o motor e marcar a saúde como falsa, nunca virar render direto silencioso.
 const renderFailure = await page.evaluate(async () => {

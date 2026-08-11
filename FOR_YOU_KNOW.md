@@ -36,6 +36,9 @@ partial application; optional prewarming and adaptive quality may degrade safely
 - Models, textures, and lighting assets are procedural. The site stays below 3 MB
   gzipped, excluding the hotlinked emulator.
 - The real XP-800 has no reset key. Pushing either cartridge cover performs soft reset.
+- On phones the HUD is a modal bottom sheet: its close control stays visible while the
+  contents scroll, and tapping the backdrop or pulling the grip down also dismisses it.
+  Closing returns focus to the launcher.
 - Photographs outrank the written spec, but every photograph-driven correction must also
   update `docs/SPEC.md` with the measurement and source.
 

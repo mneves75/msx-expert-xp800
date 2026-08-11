@@ -41,6 +41,7 @@ Inspired by [ps1-pi.vercel.app](https://ps1-pi.vercel.app/); built from scratch.
 | Power | Click the switch or press `Alt+L` |
 | Soft reset | Push a slot cover or press `Alt+R` |
 | Cartridge A / B | Click a slot or press `Alt+A` / `Alt+B` |
+| Mobile control panel | Tap outside it, drag the grip down, or use the close button, which stays visible while scrolling |
 | MSX input | Click 3D keys or use the physical keyboard |
 | Joystick | Drag the stick; hold button A for fire/Space |
 | Wireframe / X-ray | `Alt+W` / `Alt+X` |
