@@ -26,6 +26,7 @@ Do not open a public issue. Expect an initial response within seven days.
 - Deployment verification checks CSP, HSTS, `nosniff`, frame denial, emulator loading,
   CRT warm-up, and cartridge insertion against the real response.
 - Staging uses a separate Worker name, so validation cannot overwrite production.
-- The 2026-08-07 review covered source sinks, generated assets, dependency advisories,
-  the pinned WebMSX bytes/SRI digest, and live response headers. It found no exploitable
-  critical, high, or medium application vulnerability.
+- The 2026-08-10 review covered source sinks, generated assets, dependency advisories,
+  the pinned WebMSX bytes/SRI digest, and response headers. It found no exploitable
+  critical, high, or medium application vulnerability; the transitive `nanoid` advisory
+  was corrected by pinning 3.3.17.
