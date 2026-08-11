@@ -4,11 +4,17 @@ Notable changes are documented here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.0-beta7] — 2026-08-10
+
+### Fixed
+
+- Restored pointer hit testing on the sticky mobile sheet header, keeping its close button and pull-down grip usable above scrolled controls.
+
 ## [0.2.0-beta6] — 2026-08-10
 
 ### Fixed
 
-- Kept the mobile control panel's close action visible while scrolling and added backdrop-tap and pull-down dismissal.
+- Kept the mobile control panel's close action visible while scrolling and added backdrop-tap dismissal.
 
 ### Security
 
@@ -125,7 +131,8 @@ First public release.
 - Cloudflare response headers enforce CSP, HSTS, `nosniff`, frame denial, and immutable caching for hashed assets; CI actions are commit-pinned.
 - Reference photographs without redistribution licenses are excluded from the repository and fetched only for local comparison.
 
-[Unreleased]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta6...HEAD
+[Unreleased]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta7...HEAD
+[0.2.0-beta7]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta6...v0.2.0-beta7
 [0.2.0-beta6]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta5...v0.2.0-beta6
 [0.2.0-beta5]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta4...v0.2.0-beta5
 [0.2.0-beta4]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta3...v0.2.0-beta4
