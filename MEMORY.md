@@ -20,7 +20,7 @@ Curated project decisions and measurements. Read this with the newest
   runs a user-selected ROM of at most 2 MB; bytes remain in browser memory.
 - The mobile HUD is a modal bottom sheet with a sticky close control, backdrop-tap, and
   downward-grip-swipe dismissal. Closing restores focus to its launcher, and
-  `verify-interactions2.mjs` owns the regression checks.
+  `verify-interactions2.mjs` owns the visibility and hit-target regression checks.
 - Modules return `false` from `update()` when settled; render-coupled work belongs in
   `beforeRender()`. External mutations call `engine.requestRender(2)`, and moved or hidden
   shadow casters also invalidate the frozen shadow map.

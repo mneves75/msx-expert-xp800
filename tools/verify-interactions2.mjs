@@ -278,25 +278,37 @@ const mobileSheet = await mobilePage.evaluate(() => {
   if (!(panel instanceof HTMLElement) || !(close instanceof HTMLElement)) return null
   panel.scrollTop = 800
   const rect = close.getBoundingClientRect()
+  const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
   return {
     scrollTop: panel.scrollTop,
     closeVisible: rect.bottom > 0 && rect.top < innerHeight,
+    closeTargetable: hit === close || close.contains(hit),
     backdropExists: document.querySelector('.hud__sheet-backdrop') instanceof HTMLElement,
   }
 })
 check(
   'I11a',
   'fechar permanece visível após rolar o painel mobile',
-  mobileSheet?.scrollTop > 0 && mobileSheet.closeVisible === true,
+  mobileSheet?.scrollTop > 0 &&
+    mobileSheet.closeVisible === true &&
+    mobileSheet.closeTargetable === true,
   JSON.stringify(mobileSheet),
 )
 check('I11b', 'painel mobile oferece fundo tocável para fechar', mobileSheet?.backdropExists === true)
 
 if (mobileSheet?.backdropExists === true) await mobilePage.mouse.click(195, 150)
-const closedByBackdrop = await mobilePage.getAttribute('.hud', 'data-sheet')
-check('I11c', 'toque fora fecha o painel mobile', closedByBackdrop === 'closed')
+const backdropResult = await mobilePage.evaluate(() => ({
+  sheet: document.querySelector('.hud')?.getAttribute('data-sheet'),
+  focusReturned: document.activeElement?.matches('.hud__sheet-toggle') === true,
+}))
+check(
+  'I11c',
+  'toque fora fecha o painel mobile e devolve o foco',
+  backdropResult.sheet === 'closed' && backdropResult.focusReturned,
+  JSON.stringify(backdropResult),
+)
 
-if (closedByBackdrop !== 'closed') {
+if (backdropResult.sheet !== 'closed') {
   await mobilePage.evaluate(() => {
     const close = document.querySelector('.hud__sheet-close')
     if (close instanceof HTMLButtonElement) close.click()

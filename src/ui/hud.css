@@ -655,7 +655,7 @@
   box-shadow: 0 16px 36px -20px rgba(0, 0, 0, 0.95);
   transition:
     opacity 220ms var(--hud-ease),
-    visibility 220ms;
+    visibility 0s;
 }
 
 .hud__sheet-toggle-state {
@@ -731,6 +731,7 @@
     margin-top: -1rem;
     padding-top: 1rem;
     background: var(--hud-sheet);
+    pointer-events: auto;
     touch-action: none;
     user-select: none;
   }
