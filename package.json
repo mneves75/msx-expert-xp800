@@ -1,7 +1,7 @@
 {
   "name": "msx-expert-xp800",
   "private": true,
-  "version": "0.2.0-beta5",
+  "version": "0.2.0-beta6",
   "type": "module",
   "description": "Interactive 3D replica of the Gradiente Expert XP-800 (Brazilian MSX, 1985) with a real MSX emulator on a period CRT",
   "license": "MIT",

@@ -4,6 +4,16 @@ Notable changes are documented here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.2.0-beta6] — 2026-08-10
+
+### Fixed
+
+- Kept the mobile control panel's close action visible while scrolling and added backdrop-tap and pull-down dismissal.
+
+### Security
+
+- Pinned transitive `nanoid` to 3.3.17, clearing the high-severity advisory in the Vite/PostCSS build chain.
+
 ## [0.2.0-beta5] — 2026-08-10
 
 ### Removed
@@ -115,7 +125,11 @@ First public release.
 - Cloudflare response headers enforce CSP, HSTS, `nosniff`, frame denial, and immutable caching for hashed assets; CI actions are commit-pinned.
 - Reference photographs without redistribution licenses are excluded from the repository and fetched only for local comparison.
 
-[Unreleased]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta2...HEAD
+[Unreleased]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta6...HEAD
+[0.2.0-beta6]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta5...v0.2.0-beta6
+[0.2.0-beta5]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta4...v0.2.0-beta5
+[0.2.0-beta4]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta3...v0.2.0-beta4
+[0.2.0-beta3]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta2...v0.2.0-beta3
 [0.2.0-beta2]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta1...v0.2.0-beta2
 [0.2.0-beta1]: https://github.com/mneves75/msx-expert-xp800/compare/v0.1.0...v0.2.0-beta1
 [0.1.0]: https://github.com/mneves75/msx-expert-xp800/releases/tag/v0.1.0
