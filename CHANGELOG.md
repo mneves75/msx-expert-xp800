@@ -10,6 +10,7 @@ Notable changes are documented here. The format follows [Keep a Changelog](https
 - Keep HUD slot state authoritative when an insertion is rejected, and release owned instanced GPU buffers during teardown.
 - Derive desk contact shadows from visible geometry and actual instance transforms, removing an invisible quad that enlarged the console's shadow.
 - Keep Tab and Shift+Tab focus inside the mobile control panel while it is open.
+- Complete the reset cover's physical press before releasing it, so stalled frames cannot swallow the reset action.
 
 ### Removed
 

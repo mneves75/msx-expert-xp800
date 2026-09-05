@@ -258,6 +258,7 @@ interface SlotRig {
   romId: string | null
   pushing: boolean
   resetArmed: boolean
+  releaseAfterReset: boolean
   /** Cursor is on this cover: hold it at the hover give. */
   hovered: boolean
   /** The hover give is currently applied, so we know when to hand it back. */
@@ -766,6 +767,7 @@ class Interactions implements InteractionsModule {
         romId: null,
         pushing: false,
         resetArmed: false,
+        releaseAfterReset: false,
         hovered: false,
         giving: false,
       })
@@ -1356,10 +1358,7 @@ class Interactions implements InteractionsModule {
       this.setNote(TXT.resetBlocked, false)
       return
     }
-    this.pressCover(free)
-    this.later(() => {
-      this.releaseCover(free, false)
-    }, 190)
+    this.pressCover(free, true)
   }
 
   private fireReset(): void {
@@ -1385,13 +1384,18 @@ class Interactions implements InteractionsModule {
 
   // ── Cartridge slot covers ──────────────────────────────────────────────────
 
-  private pressCover(slot: SlotId): void {
+  private pressCover(slot: SlotId, releaseAfterReset = false): void {
     const rig = this.slots.get(slot)
     if (rig === undefined) return
     if (rig.phase !== 'vazio') return
+    if (rig.pushing) {
+      if (!releaseAfterReset) rig.releaseAfterReset = false
+      return
+    }
     rig.pushing = true
     rig.giving = false
     rig.resetArmed = true
+    rig.releaseAfterReset = releaseAfterReset
     rig.flap.drive(rig.pushAngle)
   }
 
@@ -1405,6 +1409,7 @@ class Interactions implements InteractionsModule {
     if (!rig.pushing) return
     rig.pushing = false
     rig.resetArmed = false
+    rig.releaseAfterReset = false
     rig.giving = false
     // Hand the flap back to gravity and its return spring — it slaps shut and bounces.
     rig.flap.release()
@@ -1457,6 +1462,7 @@ class Interactions implements InteractionsModule {
       return
     }
 
+    this.releaseCover(slot, true)
     rig.cartridge = entry.object
     rig.romId = entry.romId
     rig.phase = 'entrando'
@@ -1583,6 +1589,8 @@ class Interactions implements InteractionsModule {
       if (rig.resetArmed && rig.flap.angle > rig.pushAngle * 0.9) {
         rig.resetArmed = false
         this.fireReset()
+        // A synthetic press waits for the switch, even when frames stall.
+        if (rig.releaseAfterReset) this.releaseCover(rig.slot, false)
       }
 
       if (rig.cartridge === null) continue

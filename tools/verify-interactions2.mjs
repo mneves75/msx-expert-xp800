@@ -244,7 +244,12 @@ const out = await page.evaluate(async ({ offline, animationTimeout }) => {
   let resetCalls = 0
   resetSource.reset = function () { resetCalls += 1; return originalReset.call(this) }
   try {
-    itx.reset(); await wait(500)
+    // A stalled frame must not release the synthetic press before its switch closes.
+    const engine = window.__msx.engine
+    engine.stop()
+    try { itx.reset(); await wait(250) } finally { engine.start() }
+    await until(() => [...itx.slots.values()].every((rig) => !rig.pushing && !rig.flap.moving),
+      'reset cover completes its push and return')
     o.resetCalls = resetCalls
   } finally { resetSource.reset = originalReset }
 
