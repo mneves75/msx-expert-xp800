@@ -11,19 +11,17 @@
  * boot também pode vencer a corrida contra a inserção (a máquina sobe sem o
  * cartucho), então o começo do jogo re-insere e tenta de novo em vez de assumir.
  */
-import { chromium } from 'playwright'
+import { launchBrowser, targetUrl } from './browser.mjs'
 
-const URL_ = process.argv[2] ?? 'http://localhost:5173/'
+const URL_ = targetUrl(process.argv[2]?.startsWith('http') ? process.argv[2] : undefined)
 
-const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'],
-})
+const browser = await launchBrowser(['--ignore-gpu-blocklist'])
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors = []
 page.on('pageerror', (e) => errors.push(String(e)))
 
 await page.goto(URL_, { waitUntil: 'networkidle', timeout: 60_000 })
-await page.waitForFunction(() => window.__msxReady === true, { timeout: 60_000 })
+await page.waitForFunction(() => window.__msxReady === true, null, { timeout: 60_000 })
 await page.evaluate(() => {
   window.__msx.cameraRig.setAutoRotate(false)
   window.__msx.interactions.setAutoRotate?.(false)
@@ -51,6 +49,7 @@ const tap = async (code) => {
 await insert()
 await page.waitForFunction(
   () => window.__msx.interactions.getState().emulator === 'webmsx',
+  null,
   { timeout: 30_000 },
 )
 
@@ -60,8 +59,7 @@ await page.waitForFunction(
  */
 async function scan() {
   return page.evaluate(() => {
-    const canvases = Array.from(document.querySelectorAll('canvas'))
-    const wmsx = canvases.find((c) => c.getAttribute('aria-label') === null && c.width >= 256)
+    const wmsx = document.querySelector('#gradiente-wmsx-screen #wmsx-screen-canvas')
     if (!wmsx) return null
     const probe = document.createElement('canvas')
     probe.width = wmsx.width

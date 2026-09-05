@@ -1,12 +1,6 @@
 import * as THREE from 'three'
 
 import type { ScreenSource } from '../core/types.ts'
-import {
-  CrtProcessor,
-  CrtWarmup,
-  isWebGLRenderer,
-  type CrtProcessorOptions,
-} from './CrtShader.ts'
 import { proceduralKeyForCode } from './Keymap.ts'
 
 /**
@@ -222,17 +216,6 @@ interface BasicValue {
   readonly num: number
 }
 
-export interface ProceduralScreenOptions {
-  /**
-   * Renderer da cena. Passando um, esta fonte monta o próprio
-   * {@link CrtProcessor} e `texture` já sai processada pelo tubo — é o modo que
-   * serve a quem só sabe ligar um `ScreenSource` e ler `texture`. Sem renderer,
-   * `texture` é o quadro cru do VDP e o vidro fica por conta de quem compõe.
-   */
-  readonly renderer?: THREE.WebGLRenderer | undefined
-  readonly crt?: CrtProcessorOptions | undefined
-}
-
 // ---------------------------------------------------------------------------
 // Renderer
 // ---------------------------------------------------------------------------
@@ -244,17 +227,8 @@ export class ProceduralScreen implements ScreenSource {
   /** Tamanho da textura de apresentação, incluindo a borda procedural. */
   public readonly presentationWidth = SCREEN_W
   public readonly presentationHeight = SCREEN_H
-  /**
-   * Textura a amostrar. Quando esta fonte recebeu um renderer, é a saída já
-   * processada pelo tubo; senão, é o quadro cru do VDP. A identidade é estável
-   * nos dois casos — pode ser plugada uma vez só.
-   */
+  /** Quadro cru do VDP, com identidade estável durante toda a vida da fonte. */
   public get texture(): THREE.Texture {
-    return this.crt?.texture ?? this.canvasTexture
-  }
-
-  /** Quadro cru do VDP, antes do vidro. Útil para depuração. */
-  public get rawTexture(): THREE.Texture {
     return this.canvasTexture
   }
 
@@ -292,19 +266,10 @@ export class ProceduralScreen implements ScreenSource {
   private cartTitle: string | null = null
   private readonly cartridges = new Map<'A' | 'B', string>()
   private savedScreen: { cells: Uint8Array; fg: Uint8Array; bg: Uint8Array } | null = null
-  private readonly renderer: THREE.WebGLRenderer | null
-  private readonly crt: CrtProcessor | null
-  private readonly warmup = new CrtWarmup()
   private dirty = false
   private disposed = false
 
-  /**
-   * Aceita um `ProceduralScreenOptions` ou, na prática, qualquer objeto que
-   * carregue um `renderer` — o `ModuleContext` da cena, por exemplo. É o que
-   * permite a esta fonte ser instanciada por uma camada que não conhece o
-   * pipeline e ainda assim sair com o tubo completo.
-   */
-  public constructor(options: ProceduralScreenOptions = {}) {
+  public constructor() {
     const canvas = document.createElement('canvas')
     canvas.width = SCREEN_W
     canvas.height = SCREEN_H
@@ -336,22 +301,6 @@ export class ProceduralScreen implements ScreenSource {
 
     this.clearIndices(C.black)
     this.blit()
-
-    this.renderer = isWebGLRenderer(options.renderer) ? options.renderer : null
-    this.crt =
-      this.renderer === null
-        ? null
-        : new CrtProcessor(this.canvasTexture, {
-            sourceWidth: ACTIVE_W,
-            sourceHeight: ACTIVE_H,
-            ...options.crt,
-          })
-  }
-
-  /** Rampa de aquecimento, quando dirigida de fora pela sequência de energia. */
-  public setWarmup(value: number): void {
-    this.warmup.set(value)
-    this.crt?.setWarmup(value)
   }
 
   // -------------------------------------------------------------------------
@@ -366,14 +315,12 @@ export class ProceduralScreen implements ScreenSource {
       return Promise.reject(new DOMException('Inicialização da tela cancelada.', 'AbortError'))
     }
     this.running = true
-    this.warmup.powerOn()
     this.enterSplash()
     return Promise.resolve()
   }
 
   public stop(): void {
     this.running = false
-    this.warmup.powerOff()
     this.mode = 'off'
     this.dirty = true
     this.flushFrame()
@@ -423,13 +370,6 @@ export class ProceduralScreen implements ScreenSource {
       }
       if (this.dirty) this.flushFrame()
     }
-    // O tubo roda todo frame mesmo com a máquina parada: a persistência do
-    // fósforo e a rampa de aquecimento são contínuas, não por quadro do VDP.
-    const crt = this.crt
-    const renderer = this.renderer
-    if (crt === null || renderer === null) return
-    crt.setWarmup(this.warmup.update(dt))
-    crt.render(renderer, dt)
   }
 
   /**
@@ -510,7 +450,6 @@ export class ProceduralScreen implements ScreenSource {
     if (this.disposed) return
     this.disposed = true
     this.stop()
-    this.crt?.dispose()
     this.canvasTexture.dispose()
   }
 

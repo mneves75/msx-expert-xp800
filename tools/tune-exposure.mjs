@@ -1,9 +1,9 @@
 // Screenshot → data URL → decode in-page → ROI mean. No native deps, WebGL-safe.
-import { chromium } from 'playwright'
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=metal', '--enable-gpu'] })
+import { launchBrowser, targetUrl } from './browser.mjs'
+const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
-await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' })
-await page.waitForFunction(() => window.__msxReady === true, { timeout: 60_000 })
+await page.goto(targetUrl(), { waitUntil: 'networkidle' })
+await page.waitForFunction(() => window.__msxReady === true, null, { timeout: 60_000 })
 await page.evaluate(() => {
   window.__msx.cameraRig.setAutoRotate?.(false)
   window.__msxHud?.setChromeVisible(false)

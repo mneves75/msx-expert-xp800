@@ -69,33 +69,6 @@ function isLightWithShadow(o: THREE.Object3D): o is THREE.Object3D & { shadow: T
   return candidate.isLight === true && typeof candidate.shadow === 'object' && candidate.shadow !== null
 }
 
-function disposeMaterial(material: THREE.Material): void {
-  const record = material as unknown as Record<string, unknown>
-  for (const key of Object.keys(record)) {
-    const value = record[key]
-    if (value instanceof THREE.Texture) value.dispose()
-  }
-  material.dispose()
-}
-
-/**
- * Deep-release a standalone object tree whose geometry, materials and textures have
- * exactly one owner. Scene modules must use their own `dispose()` instead because their
- * groups can contain shared library materials and borrowed interaction geometry.
- */
-export function disposeObject3D(root: THREE.Object3D): void {
-  root.traverse((child) => {
-    const mesh = child as unknown as {
-      geometry?: THREE.BufferGeometry
-      material?: THREE.Material | THREE.Material[]
-    }
-    mesh.geometry?.dispose()
-    const material = mesh.material
-    if (Array.isArray(material)) for (const m of material) disposeMaterial(m)
-    else if (material) disposeMaterial(material)
-  })
-}
-
 /** Report whether the browser can give us a WebGL2 context at all. */
 export function isWebGL2Available(): boolean {
   try {
@@ -292,10 +265,6 @@ export class Engine {
     }
     this.mutedUpdates.delete(module)
     this.disposeModule(module)
-  }
-
-  getGroup(module: SceneModule): THREE.Group | undefined {
-    return this.groups.get(module)
   }
 
   get moduleNames(): readonly string[] {

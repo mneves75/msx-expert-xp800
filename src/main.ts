@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { Engine, isWebGL2Available, type AppContext, type RenderPipeline } from './core/Engine'
+import { Engine, isWebGL2Available, type AppContext } from './core/Engine'
 import type { CameraPose, CameraRig } from './core/CameraRig'
 import type { SceneModule } from './core/types'
 import { createMaterialLibrary, type ManagedMaterialLibrary } from './core/Materials'
@@ -13,7 +13,7 @@ import { crtMonitorModule } from './models/CrtMonitor'
 import { CartridgeModule } from './models/Cartridge'
 import { joystick } from './models/Joystick'
 import { createInteractions, type InteractionsModule } from './interaction/Interactions'
-import { createHud, destroyHud, type HudHandle } from './ui/Hud'
+import { createHud, type HudHandle } from './ui/Hud'
 import { afterFirstPaint, yieldToMain } from './core/cooperative'
 
 /**
@@ -236,21 +236,6 @@ async function warmDeferredAOPass(
   }
 }
 
-/**
- * Adapt {@link PostFX} to the engine's {@link RenderPipeline}.
- *
- * `PostFX` calls its resize entry point `resize()`, the engine calls it `setSize()`.
- * Without this adapter the composer keeps its construction-time buffers forever and the
- * image stretches the moment the window changes size.
- */
-function asPipeline(postFX: PostFX): RenderPipeline {
-  return {
-    render: (deltaTime) => postFX.render(deltaTime),
-    setSize: (width, height) => postFX.resize(width, height),
-    dispose: () => postFX.dispose(),
-  }
-}
-
 // ─── Application ownership ──────────────────────────────────────────────────────
 
 class ApplicationOwner {
@@ -278,7 +263,7 @@ class ApplicationOwner {
 
   ownHud(hud: HudHandle): boolean {
     if (this.disposed) {
-      destroyHud()
+      hud.dispose()
       return false
     }
     this.hud = hud
@@ -299,7 +284,7 @@ class ApplicationOwner {
     this.disposed = true
 
     try {
-      if (this.hud !== null) destroyHud()
+      this.hud?.dispose()
     } catch (error) {
       console.error('[main] falha ao descartar o HUD:', error)
     }
@@ -421,7 +406,7 @@ async function bootstrap(): Promise<void> {
         postFXCandidate.dispose()
         return
       }
-      engine.setPipeline(asPipeline(postFXCandidate))
+      engine.setPipeline(postFXCandidate)
       postFX = postFXCandidate
     } catch (error) {
       try {
@@ -548,6 +533,7 @@ async function bootstrap(): Promise<void> {
     engine.onReady(() => {
       if (application.isDisposed || activeApplication !== application) return
       window.__msxReady = true
+      if (hud !== null) delete hud.element.dataset['boot']
       hideBootVeil()
       if (deferAOWarm) {
         const warmAO = (): void => {

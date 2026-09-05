@@ -13,12 +13,15 @@ Do not open a public issue. Expect an initial response within seven days.
 
 ## Scope
 
-- WebMSX is the only third-party runtime dependency. It loads from a commit-pinned
+- WebMSX is the only third-party script loaded from another origin. It loads from a commit-pinned
   jsDelivr URL with Subresource Integrity; a modified response is rejected and the app
   falls back to its procedural screen.
-- `public/_headers` limits scripts to `'self'` and `cdn.jsdelivr.net`, and sets CSP,
+- `public/_headers` limits scripts to `'self'` and the exact pinned WebMSX URL, and sets CSP,
   HSTS, `nosniff`, and frame-denial headers. Practical bypass reports are welcome.
 - User-selected ROM bytes stay in browser memory and are never persisted or uploaded.
+- WebMSX URL-parameter configuration is disabled, so page query strings cannot replace
+  the application's fixed emulator configuration. ROM files are limited to 2 MB before
+  their contents are read.
 
 ## Verification
 
@@ -26,7 +29,8 @@ Do not open a public issue. Expect an initial response within seven days.
 - Deployment verification checks CSP, HSTS, `nosniff`, frame denial, emulator loading,
   CRT warm-up, and cartridge insertion against the real response.
 - Staging uses a separate Worker name, so validation cannot overwrite production.
-- The 2026-08-10 review covered source sinks, generated assets, dependency advisories,
-  the pinned WebMSX bytes/SRI digest, and response headers. It found no exploitable
-  critical, high, or medium application vulnerability; the transitive `nanoid` advisory
-  was corrected by pinning 3.3.17.
+- Header checks parse each required directive and reject broadened script/connect
+  sources and unsafe inline/eval grants. Positive and negative controls test the guards.
+- The 2026-09-05 audit found that the previous `nanoid` 3.3.17 override remained affected
+  by [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8). The override
+  now uses the patched 3.3.18 line within the consumer's existing major version.

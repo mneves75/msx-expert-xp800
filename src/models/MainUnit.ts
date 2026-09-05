@@ -2511,7 +2511,7 @@ function cartridgeBay(bucket: Bucket, xLeft: number): void {
  * row, so the photograph wins. Modelled as real bodies rather than painted, so
  * every cap gets its own highlight and its own contact shadow into the bezel.
  */
-function buttonCluster(bucket: Bucket): THREE.Mesh[] {
+function buttonCluster(bucket: Bucket): void {
   const bz = BUTTONS.bezel
   // Bezel floor, 0.9 mm behind the panel face.
   put(
@@ -2526,7 +2526,6 @@ function buttonCluster(bucket: Bucket): THREE.Mesh[] {
       FZ - mm(0.9) - mm(1),
     ),
   )
-  const meshes: THREE.Mesh[] = []
   for (let row = 0; row < BUTTONS.rowY.length; row++) {
     const rowY = BUTTONS.rowY[row]
     if (rowY === undefined) continue
@@ -2543,12 +2542,9 @@ function buttonCluster(bucket: Bucket): THREE.Mesh[] {
         FZ - mm(0.9) + BUTTONS.proud,
         mm(0.3),
       )
-      const mesh = new THREE.Mesh(geo)
-      mesh.name = `function-button-${row * 5 + col + 1}`
-      meshes.push(mesh)
+      put(bucket, 'buttonCap', geo)
     }
   }
-  return meshes
 }
 
 // ---------------------------------------------------------------------------
@@ -2745,22 +2741,6 @@ export class MainUnitModule implements SceneModule {
       wireGreen: derive(panel, 'wire-green', 0x1f6b3a, 0.66),
       wireYellow: derive(panel, 'wire-yellow', 0xcfa724, 0.66),
       chrome: lib.metal(PALETTE.chrome, 0.32),
-      /**
-       * Plated chassis screw. Metalness is pulled off 1.0 on purpose: a pure
-       * conductor shows only what it can see, and what a rear panel lit at a graze
-       * can see is the void — which is why every screw head measured as a dark
-       * speck against a 90-level plate while the reference photograph shows the
-       * heads *brighter* than the paint around them. Zinc plating over steel
-       * scatters a broad near-diffuse lobe on top of its specular; mixed metalness
-       * is the cheapest honest model of that, and it lands the heads on the right
-       * side of the plate's value instead of inverting the relationship.
-       */
-      screwSteel: ((): THREE.MeshPhysicalMaterial => {
-        const m = derive(lib.metal(PALETTE.chrome, 0.44), 'screw-plated-steel', 0xd9d6cc, 0.44)
-        m.metalness = 0.72
-        m.envMapIntensity = 1.5
-        return m
-      })(),
       shellMetal: lib.metal(PALETTE.connectorShell, 0.42),
       brass: lib.metal(PALETTE.brass, 0.3),
       gold: lib.metal(0xc9a227, 0.28),
@@ -2796,7 +2776,7 @@ export class MainUnitModule implements SceneModule {
     const back = buildBackHardware(bucket)
     cartridgeBay(bucket, BAY_A_X_MM)
     cartridgeBay(bucket, BAY_B_X_MM)
-    for (const capMesh of buttonCluster(bucket)) put(bucket, 'buttonCap', capMesh.geometry)
+    buttonCluster(bucket)
 
     // O merge dos buckets é o trecho de geometria mais caro do módulo: fatia própria.
     await yieldToMain()
@@ -2892,10 +2872,9 @@ export class MainUnitModule implements SceneModule {
     // ── Decal layers ──────────────────────────────────────────────────────
     await this.addDecals(group, bayA.pivot, bayB.pivot)
 
-    // ── Cord, the peeling sticker corner, and the contact shadow ──────────
+    // ── Cord and peeling sticker corner ──────────
     group.add(this.buildCord(materials))
     group.add(this.buildStickerPeel())
-    group.add(this.buildContactShadow())
 
     this.partHandles = {
       root: group,
@@ -3032,70 +3011,6 @@ export class MainUnitModule implements SceneModule {
     mouth.name = `slot-${slot}-mouth`
     mouth.position.set(coverCx, fy(36.5), Z_FASCIA_FRONT - RECESS.depth - mm(4))
     return { pivot, cover, mouth }
-  }
-
-  /**
-   * Contact shadow under the chassis.
-   *
-   * The console stands on four 6 mm feet, so light *does* get underneath — but a
-   * RectAreaLight key cannot be occluded in three.js, which left the darkest
-   * point under the machine at only ~1.5:1 against open desk and made the box
-   * look welded to the table. This is the missing occlusion, authored as a
-   * multiply layer: a near-black core over the chassis footprint decaying over
-   * ~35 mm, i.e. the penumbra a 6 mm gap actually produces.
-   */
-  private buildContactShadow(): THREE.Mesh {
-    const px = 256
-    const canvas = document.createElement('canvas')
-    canvas.width = px
-    canvas.height = px
-    const c2d = canvas.getContext('2d')
-    const w = BODY_W + mm(90)
-    const d = BODY_D + mm(90)
-    // A black quad whose *alpha* carries the occlusion. Multiply blending would be
-    // the textbook choice but three.js requires premultiplied alpha for it, and a
-    // straight translucent black lays down the same falloff with none of that.
-    const material = new THREE.MeshBasicMaterial({
-      name: 'sombra-de-contato',
-      color: 0x000000,
-      transparent: true,
-      depthWrite: false,
-      toneMapped: false,
-      side: THREE.DoubleSide,
-    })
-    if (c2d !== null) {
-      c2d.clearRect(0, 0, px, px)
-      // Footprint in canvas pixels, then a blurred inset core.
-      const fx0 = ((w / 2 - BODY_W / 2) / w) * px
-      const fy0 = ((d / 2 - BODY_D / 2) / d) * px
-      const fw = (BODY_W / w) * px
-      const fh = (BODY_D / d) * px
-      c2d.filter = 'blur(13px)'
-      c2d.fillStyle = 'rgba(0,0,0,0.62)'
-      c2d.fillRect(fx0 + 2, fy0 + 2, fw - 4, fh - 4)
-      c2d.filter = 'blur(4px)'
-      c2d.fillStyle = 'rgba(0,0,0,0.55)'
-      c2d.fillRect(fx0 + 6, fy0 + 6, fw - 12, fh - 12)
-      c2d.filter = 'none'
-      const texture = new THREE.CanvasTexture(canvas)
-      texture.colorSpace = THREE.SRGBColorSpace
-      texture.wrapS = THREE.ClampToEdgeWrapping
-      texture.wrapT = THREE.ClampToEdgeWrapping
-      texture.anisotropy = this.maxAnisotropy
-      texture.needsUpdate = true
-      this.ownedTextures.push(texture)
-      material.alphaMap = texture
-      material.needsUpdate = true
-    }
-    this.ownedMaterials.push(material)
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, d), material)
-    mesh.name = 'sombra-de-contato'
-    mesh.rotation.x = -Math.PI / 2
-    mesh.position.set(0, mm(0.4), 0)
-    mesh.renderOrder = 1
-    mesh.castShadow = false
-    mesh.receiveShadow = false
-    return mesh
   }
 
   /** Moulded mains cord, leaving the grommet and sagging onto the desk. */

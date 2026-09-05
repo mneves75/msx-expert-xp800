@@ -15,8 +15,8 @@
  *                   request with curl:
  *                     curl -o /dev/null -w 'tcp %{time_connect} tls %{time_appconnect} ttfb %{time_starttransfer}\n' <url>
  *  2. **document** — DOMContentLoaded and the `load` event: the shell plus every
- *                   render-blocking resource. Module scripts are deferred by definition,
- *                   so DCL here is the shell + CSS, and `load` adds the JS bundles.
+ *                   render-blocking resource. DOMContentLoaded also waits for deferred
+ *                   module evaluation; neither event proves the asynchronous 3D boot.
  *  3. **scene**   — first paint, and `window.__msxReady`: the 3D scene actually built and
  *                   presented. This one is bounded by GPU work and cannot be compared to
  *                   an HTML page's load time.
@@ -35,29 +35,43 @@
  *
  * Output: a table on stdout and `.scratch/bench/<label>.json` for A/B against a later run.
  */
-import { chromium } from 'playwright'
+import { launchBrowser, targetUrl } from './browser.mjs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { loadavg, cpus } from 'node:os'
 
 const args = process.argv.slice(2)
 const flag = (name, fallback) => {
   const i = args.indexOf(`--${name}`)
-  return i !== -1 && args[i + 1] ? args[i + 1] : fallback
+  if (i === -1) return fallback
+  if (!args[i + 1] || args[i + 1].startsWith('--')) throw new Error(`--${name} requires a value`)
+  return args[i + 1]
 }
 const has = (name) => args.includes(`--${name}`)
+const positiveInteger = (name, fallback) => {
+  const value = Number(flag(name, fallback))
+  if (!Number.isInteger(value) || value < 1) throw new Error(`--${name} must be a positive integer`)
+  return value
+}
 
-const BASE = flag('base', 'http://localhost:4173').replace(/\/+$/, '')
+const BASE = flag('base', targetUrl('http://127.0.0.1:4173/')).replace(/\/+$/, '')
+if (!['http:', 'https:'].includes(new URL(BASE).protocol)) throw new Error('--base must be HTTP(S)')
 const PATHS = flag('paths', '/,/nao-existe-spa-fallback')
   .split(',')
   .map((p) => p.trim())
   .filter(Boolean)
-const RUNS = Number(flag('runs', '10'))
+if (!PATHS.length || PATHS.some((path) => !path.startsWith('/') || path.startsWith('//'))) {
+  throw new Error('--paths must contain same-origin absolute paths')
+}
+const RUNS = positiveInteger('runs', '10')
 const LABEL = flag('label', 'bench')
+if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(LABEL)) throw new Error('--label must be a filename component')
 const OUT_DIR = resolve(flag('out', '.scratch/bench'))
-const WIDTH = Number(flag('width', '1440'))
-const HEIGHT = Number(flag('height', '900'))
+const WIDTH = positiveInteger('width', '1440')
+const HEIGHT = positiveInteger('height', '900')
 const SCENE = !has('no-scene')
-const SCENE_TIMEOUT = Number(flag('scene-timeout', '30000'))
+const SCENE_TIMEOUT = positiveInteger('scene-timeout', '30000')
+const HOST_LOAD_AT_START = loadavg()
 
 const pct = (sorted, p) => {
   if (!sorted.length) return null
@@ -76,16 +90,11 @@ const stats = (values) => {
   }
 }
 
-const browser = await chromium.launch({
-  args: [
-    '--use-gl=angle',
-    '--use-angle=metal',
-    '--enable-gpu',
+const browser = await launchBrowser([
     '--ignore-gpu-blocklist',
     '--hide-scrollbars',
     '--mute-audio',
-  ],
-})
+])
 
 /**
  * One cold-cache navigation. Returns the timing tiers in milliseconds relative to the
@@ -98,6 +107,8 @@ async function measure(url) {
     bypassCSP: false,
   })
   const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', (error) => errors.push(String(error)))
   const transfer = { document: 0, script: 0, stylesheet: 0, other: 0, total: 0, requests: 0 }
   page.on('response', async (res) => {
     try {
@@ -117,6 +128,7 @@ async function measure(url) {
   try {
     const response = await page.goto(url, { waitUntil: 'load', timeout: 60000 })
     const status = response?.status() ?? 0
+    if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`)
 
     if (SCENE) {
       sceneReadyMs = await page
@@ -131,6 +143,11 @@ async function measure(url) {
           return null
         }, SCENE_TIMEOUT)
         .catch(() => null)
+      if (sceneReadyMs === null) throw new Error(`scene did not become ready within ${SCENE_TIMEOUT} ms`)
+      if (errors.length) throw new Error(`scene errors: ${errors.join(' | ')}`)
+      if (!await page.evaluate(() => window.__msx?.engine?.isHealthy === true)) {
+        throw new Error('render pipeline is not healthy')
+      }
     }
 
     const nav = await page.evaluate(() => {
@@ -150,6 +167,7 @@ async function measure(url) {
         encodedDocument: entry.encodedBodySize,
       }
     })
+    if (nav === null) throw new Error('navigation timing is unavailable')
 
     return { ok: true, status, ...nav, sceneReady: sceneReadyMs, transfer }
   } catch (error) {
@@ -160,7 +178,7 @@ async function measure(url) {
 }
 
 const results = {}
-/** Um alvo sem nenhuma amostra válida faz o processo sair diferente de zero. */
+/** Invalid samples are reported and fail the run instead of improving the median. */
 let failedTargets = 0
 for (const path of PATHS) {
   const url = `${BASE}${path}`
@@ -168,10 +186,12 @@ for (const path of PATHS) {
   await measure(url)
 
   const samples = []
+  const rejected = []
   for (let i = 0; i < RUNS; i += 1) {
     const sample = await measure(url)
     if (!sample.ok) {
       console.error(`  ! ${url} run ${i + 1}: ${sample.error}`)
+      rejected.push({ run: i + 1, error: sample.error })
       continue
     }
     samples.push(sample)
@@ -181,16 +201,18 @@ for (const path of PATHS) {
     // Sem isto, um servidor fora do ar sai com status 0 e um wrapper de CI lê a
     // medição como bem-sucedida — o modo de falha mais caro de uma ferramenta de
     // benchmark, porque some justamente quando algo já está quebrado.
-    results[path] = { url, error: 'every run failed' }
+    results[path] = { url, error: 'every run failed', rejected }
     failedTargets += 1
     continue
   }
 
   const first = samples[0]
+  if (rejected.length) failedTargets += 1
   results[path] = {
     url,
     status: first.status,
     runs: samples.length,
+    rejected,
     shell: {
       ttfb: stats(samples.map((s) => s.ttfb)),
       responseEnd: stats(samples.map((s) => s.responseEnd)),
@@ -223,6 +245,8 @@ const report = {
   runs: RUNS,
   viewport: `${WIDTH}x${HEIGHT}`,
   measuredAt: new Date().toISOString(),
+  sceneRequired: SCENE,
+  host: { platform: process.platform, logicalCpus: cpus().length, loadAverageAtStart: HOST_LOAD_AT_START, loadAverageAtEnd: loadavg() },
   results,
 }
 
@@ -255,6 +279,6 @@ console.log(`  shell = conexão fria: TTFB inclui os apertos de mão TCP/TLS, n�
 console.log(`→ ${outPath}\n`)
 
 if (failedTargets > 0) {
-  console.error(`✗ ${failedTargets} de ${PATHS.length} alvos não produziram nenhuma amostra válida.`)
+  console.error(`✗ ${failedTargets} de ${PATHS.length} alvos tiveram amostras inválidas.`)
   process.exitCode = 1
 }

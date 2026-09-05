@@ -1128,6 +1128,7 @@ class CrtMonitor implements CrtMonitorModule {
   private readonly frameAverageScratch: FrameAverage = { r: 0, g: 0, b: 0 }
 
   private readonly ownedGeometries: THREE.BufferGeometry[] = []
+  private readonly ownedInstances: THREE.InstancedMesh[] = []
   private readonly ownedMaterials: THREE.Material[] = []
   private readonly ownedTextures: THREE.Texture[] = []
 
@@ -1601,6 +1602,7 @@ class CrtMonitor implements CrtMonitorModule {
     this.ownedGeometries.push(geometry)
 
     const mesh = new THREE.InstancedMesh(geometry, material, count)
+    this.ownedInstances.push(mesh)
     mesh.name = 'monitor-aletas-ventilacao'
     mesh.castShadow = true
     mesh.receiveShadow = true
@@ -1666,6 +1668,7 @@ class CrtMonitor implements CrtMonitorModule {
     const footGeometry = new THREE.CylinderGeometry(0.0105, 0.0115, DIM.base.footH, 20, 1)
     this.ownedGeometries.push(footGeometry)
     const feet = new THREE.InstancedMesh(footGeometry, materials.rubber(), 4)
+    this.ownedInstances.push(feet)
     feet.name = 'monitor-pes'
     feet.castShadow = true
     const matrix = new THREE.Matrix4()
@@ -1987,6 +1990,7 @@ class CrtMonitor implements CrtMonitorModule {
     const shellGeo = new THREE.CylinderGeometry(0.0046, 0.0046, 0.007, 20, 1)
     this.ownedGeometries.push(shellGeo)
     const shells = new THREE.InstancedMesh(shellGeo, materials.metal(0x8f9295, 0.34), 2)
+    this.ownedInstances.push(shells)
     shells.name = 'monitor-jacks'
     shells.castShadow = true
     const coreGeoYellow = new THREE.CylinderGeometry(0.0031, 0.0031, 0.0076, 16, 1)
@@ -2092,7 +2096,6 @@ class CrtMonitor implements CrtMonitorModule {
     this.warmth += (target - this.warmth) * k
     if (!this.powerOn && this.warmth < 0.0015) this.warmth = 0
 
-    this.syncScreenMaterial()
     this.syncScanlineCount()
     this.syncExposure()
 
@@ -2201,20 +2204,6 @@ class CrtMonitor implements CrtMonitorModule {
     if (Number.isFinite(exposure) && exposure > 0) {
       this.screenUniforms.uExposure.value = exposure
     }
-  }
-
-  /**
-   * O material da tela pode ter sido trocado por outro módulo (emulador).
-   * Reanexa o patch de brilho/contraste ao que estiver montado.
-   */
-  private syncScreenMaterial(): void {
-    const mesh = this.screenMesh
-    if (mesh === null) return
-    const material = mesh.material
-    if (Array.isArray(material) || !(material instanceof THREE.MeshBasicMaterial)) return
-    if (material === this.screenMaterial) return
-    this.screenMaterial = material
-    attachScreenShader(material, this.screenUniforms)
   }
 
   /**
@@ -2330,6 +2319,8 @@ class CrtMonitor implements CrtMonitorModule {
   // -------------------------------------------------------------------------
 
   public dispose(): void {
+    for (const mesh of this.ownedInstances) mesh.dispose()
+    this.ownedInstances.length = 0
     for (const geometry of this.ownedGeometries) geometry.dispose()
     this.ownedGeometries.length = 0
     for (const material of this.ownedMaterials) material.dispose()

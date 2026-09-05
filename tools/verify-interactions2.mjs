@@ -1,12 +1,23 @@
 // SPEC §8 verification, corrected to the REAL InteractionsHandle API.
-import { chromium } from 'playwright'
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=metal', '--enable-gpu'] })
+import { launchBrowser, targetUrl, WEBMSX_URL } from './browser.mjs'
+const OFFLINE = process.argv.includes('--offline') || process.env.MSX_OFFLINE === '1'
+const browser = await launchBrowser()
+try {
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
 const errs = []
-page.on('pageerror', (e) => errs.push(String(e)))
-page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
-await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' })
-await page.waitForFunction(() => window.__msxReady === true, { timeout: 60_000 })
+const collectErrors = (target) => {
+  target.on('pageerror', (error) => errs.push(String(error)))
+  target.on('console', (message) => {
+    const blockedScript = OFFLINE && message.location().url === WEBMSX_URL && /ERR_FAILED/.test(message.text())
+    if (message.type() === 'error' && !blockedScript) errs.push(message.text())
+  })
+}
+collectErrors(page)
+let blockedCdn = 0
+if (OFFLINE) await page.route(WEBMSX_URL, (route) => { blockedCdn += 1; return route.abort('failed') })
+console.log(`Mode: ${OFFLINE ? 'offline — CDN blocked; fallback required' : 'online — real CDN promotion required'}`)
+await page.goto(targetUrl(), { waitUntil: 'networkidle' })
+await page.waitForFunction(() => window.__msxReady === true, null, { timeout: 60_000 })
 
 const R = []
 const check = (id, name, pass, detail = '') => {
@@ -14,7 +25,7 @@ const check = (id, name, pass, detail = '') => {
   console.log(`${pass ? '✓' : '✗'} ${id} ${name}${detail ? ` — ${detail}` : ''}`)
 }
 
-const out = await page.evaluate(async () => {
+const out = await page.evaluate(async (offline) => {
   const itx = window.__msx.interactions
   const S = () => itx.getState()
   const wait = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -148,8 +159,9 @@ const out = await page.evaluate(async () => {
   // Browser/OS cancellation releases the gesture but must not turn into a click.
   const picker = itx.picker
   const voltageBeforeCancel = itx.voltage240
-  if (picker && itx.voltageSelector) {
-    picker.activeHit = {
+  if (!picker || !itx.voltageSelector) throw new Error('Cancellation test requires the real picker and voltage selector')
+  {
+    const hit = {
       object: itx.voltageSelector,
       partId: 'voltage-selector',
       label: 'Seletor de voltagem',
@@ -160,8 +172,17 @@ const out = await page.evaluate(async () => {
       distance: 0,
       userData: itx.voltageSelector.userData,
     }
-    picker.activePointerId = 77
-    picker.activeDragged = false
+    const arm = () => {
+      picker.activeHit = hit
+      picker.activePointerId = 77
+      picker.activeDragged = false
+    }
+    arm()
+    picker.onPointerUp(new PointerEvent('pointerup', { pointerId: 77 }))
+    o.voltagePositiveControl = itx.voltage240 !== voltageBeforeCancel
+    arm()
+    picker.onPointerUp(new PointerEvent('pointerup', { pointerId: 77 }))
+    arm()
     picker.onPointerCancel(new PointerEvent('pointercancel', { pointerId: 77 }))
   }
   o.cancelPreservedVoltage = itx.voltage240 === voltageBeforeCancel
@@ -170,11 +191,11 @@ const out = await page.evaluate(async () => {
   const before = S().slotA
   itx.insertCartridge('A'); await wait(1800)
   o.slotAAfterInsert = S().slotA?.name ?? null
-  // A rota segue o cartucho: espere a promoção real para o WebMSX (CDN) para
-  // exercer o caminho de VOLTA ao BASIC interno. Sem rede a promoção não vem,
-  // a ejeção cai direto na procedural e a checagem de fantasma segue válida.
-  for (let i = 0; i < 150 && S().emulator !== 'webmsx'; i++) await wait(200)
+  if (!offline) {
+    for (let i = 0; i < 150 && S().emulator !== 'webmsx'; i++) await wait(200)
+  }
   o.promoted = S().emulator === 'webmsx'
+  o.fallbackWithCartridge = S().emulator === 'procedural' && S().slotA !== null
   itx.ejectCartridge('A'); await wait(1600)
   o.slotAAfterEject = S().slotA?.name ?? null
   o.slotABefore = before?.name ?? null
@@ -186,8 +207,15 @@ const out = await page.evaluate(async () => {
   o.ghostSlots = proc ? [...proc.cartridges.keys()] : null
 
   // Soft reset via slot cover push
-  itx.reset(); await wait(500)
-  o.resetNote = S().note
+  const resetSource = itx.screen
+  if (!resetSource) throw new Error('Reset test requires a running screen')
+  const originalReset = resetSource.reset
+  let resetCalls = 0
+  resetSource.reset = function () { resetCalls += 1; return originalReset.call(this) }
+  try {
+    itx.reset(); await wait(500)
+    o.resetCalls = resetCalls
+  } finally { resetSource.reset = originalReset }
 
   // Display modes
   itx.setWireframe(true); await wait(150); o.wireframe = S().wireframe
@@ -199,8 +227,12 @@ const out = await page.evaluate(async () => {
   itx.setAutoRotate(true); o.autoRotate = S().autoRotate
   itx.setAutoRotate(false)
 
-  // View reset exists
-  itx.resetView(); o.resetView = true
+  const camera = window.__msx.cameraRig
+  const initialPose = camera.getPose()
+  camera.jumpTo({ ...initialPose, azimuth: initialPose.azimuth + 25, distance: initialPose.distance * 1.2 })
+  o.cameraChanged = JSON.stringify(camera.getPose()) !== JSON.stringify(initialPose)
+  itx.resetView()
+  o.resetView = JSON.stringify(camera.getPose()) === JSON.stringify(initialPose)
 
   // Power off ramp
   itx.setPower(false); await wait(300)
@@ -209,7 +241,7 @@ const out = await page.evaluate(async () => {
   o.finalOff = S().power.warmth
 
   return o
-})
+}, OFFLINE)
 
 check('I3a', 'power liga', out.powerOn === true)
 check('I3b', 'CRT warm-up é rampa', out.earlyWarmth < out.lateWarmth && out.earlyWarmth < 0.9, `${out.earlyWarmth.toFixed(2)}→${out.lateWarmth.toFixed(2)}`)
@@ -246,19 +278,120 @@ check(
     out.lifecycleOwnership?.downstream?.length === 0,
   JSON.stringify(out.lifecycleOwnership),
 )
-check('I7', 'pointercancel não aciona clique', out.cancelPreservedVoltage === true)
+check('I7', 'pointerup aciona seletor; pointercancel preserva a voltagem', out.voltagePositiveControl === true && out.cancelPreservedVoltage === true)
 check('I4a', 'inserir cartucho A reflete no estado', out.slotAAfterInsert !== null, String(out.slotAAfterInsert))
 check('I4b', 'ejetar cartucho A reflete no estado', out.slotAAfterEject === null, String(out.slotAAfterEject))
 // `out.promoted` é exigido de propósito: sem a promoção real ao WebMSX a ejeção cai
 // na procedural ainda ativa e o caminho do cartucho-fantasma nem é percorrido — um
 // verde assim seria uma verificação que não aconteceu. CDN fora do ar = falha honesta.
-check('I4c', 'ejetar o último cartucho volta ao BASIC sem cartucho-fantasma', out.promoted === true && out.emulatorAfterEject === 'procedural' && Array.isArray(out.ghostSlots) && out.ghostSlots.length === 0, `webmsx exercitado=${out.promoted} slots internos=${JSON.stringify(out.ghostSlots)}`)
-check('I5', 'reset() = tampa do slot', typeof out.resetNote === 'string' && out.resetNote.length > 0, String(out.resetNote))
+if (OFFLINE) {
+  check('I4offline', 'CDN bloqueada mantém fallback utilizável e ejeção limpa', blockedCdn > 0 && out.fallbackWithCartridge && !out.promoted && out.emulatorAfterEject === 'procedural' && Array.isArray(out.ghostSlots) && out.ghostSlots.length === 0, `requisições bloqueadas=${blockedCdn}`)
+} else {
+  check('I4c', 'ejetar o último cartucho volta do WebMSX ao BASIC sem cartucho-fantasma', out.promoted === true && out.emulatorAfterEject === 'procedural' && Array.isArray(out.ghostSlots) && out.ghostSlots.length === 0, `webmsx exercitado=${out.promoted} slots internos=${JSON.stringify(out.ghostSlots)}`)
+}
+check('I5', 'empurrar tampa chama reset da fonte uma vez', out.resetCalls === 1, `calls=${out.resetCalls}`)
 check('I8a', 'wireframe', out.wireframe === true)
 check('I8b', 'raio-X', out.xray === true)
 check('I2', 'auto-rotação (flag)', out.autoRotate === true)
-check('I9', 'resetView existe e roda', out.resetView === true)
+check('I9', 'resetView restaura uma pose realmente alterada', out.cameraChanged && out.resetView)
 check('I3d', 'desligar faz rampa', out.midOff > 0.02 && out.finalOff < 0.05, `mid=${out.midOff.toFixed(2)} final=${out.finalOff.toFixed(3)}`)
+
+// A rejected action must preserve the real state in both the readout and the HUD handle.
+await page.selectOption('select[aria-label="Escolher o cartucho do slot A"]', 'arcade-vermelho')
+await page.getByRole('button', { name: 'Inserir cartucho no slot A', exact: true }).click()
+await page.waitForFunction(() => window.__msx.interactions.getState().slotA?.id === 'arcade-vermelho', null, { timeout: 5000 })
+await page.selectOption('select[aria-label="Escolher o cartucho do slot B"]', 'arcade-vermelho')
+const rejectedHud = await page.evaluate(() => {
+  const { interactions, hud } = window.__msx
+  const button = document.querySelector('button[aria-label="Inserir cartucho no slot B"]')
+  if (!(button instanceof HTMLButtonElement) || !hud || typeof hud.render !== 'function') {
+    throw new Error('HUD rejection test requires the actual controls and renderer')
+  }
+  const original = hud.render
+  let renders = 0
+  let publications = -1 // subscribe delivers the current snapshot immediately
+  const unsubscribe = interactions.subscribe(() => { publications += 1 })
+  hud.render = function (...args) { renders += 1; return original.apply(this, args) }
+  try {
+    button.click()
+    const state = interactions.getState()
+    const readout = [...document.querySelectorAll('.hud__readouts dt')]
+      .find((element) => element.textContent === 'Slot B')?.nextElementSibling?.textContent
+    return { slotA: state.slotA?.id, slotB: state.slotB, hudSlotB: hud.getState().slotB, readout, renders, publications }
+  } finally {
+    hud.render = original
+    unsubscribe()
+  }
+})
+check('I12', 'cartucho já usado é recusado sem inventar ocupação no HUD',
+  rejectedHud.slotA === 'arcade-vermelho' && rejectedHud.slotB === null &&
+  rejectedHud.hudSlotB === null && rejectedHud.readout === 'Sem cartucho', JSON.stringify(rejectedHud))
+check('I12a', 'cada publicação redesenha o HUD uma única vez', rejectedHud.publications > 0 && rejectedHud.renders === rejectedHud.publications)
+const idleFrames = await page.evaluate(async () => {
+  const { engine, cameraRig } = window.__msx
+  cameraRig.setAutoRotate(false)
+  await new Promise((resolve) => setTimeout(resolve, 8000))
+  const before = engine.renderer.info.render.frame
+  await new Promise((resolve) => setTimeout(resolve, 1000))
+  return engine.renderer.info.render.frame - before
+})
+check('I12b', 'cartucho assentado com energia desligada deixa o render descansar', idleFrames === 0, `submissões=${idleFrames}`)
+await page.getByRole('button', { name: 'Ejetar o cartucho do slot A', exact: true }).click()
+
+// Keycap travel replaces the four incident-specific key probes. Measure real instances.
+const keyHeights = () => page.evaluate(() => {
+  const { scene, three } = window.__msx
+  const matrix = new three.Matrix4()
+  const heights = []
+  scene.traverse((object) => {
+    if (!object.isInstancedMesh || !object.name.startsWith('teclas')) return
+    for (let i = 0; i < object.count; i++) {
+      object.getMatrixAt(i, matrix)
+      heights.push(matrix.elements[13])
+    }
+  })
+  return heights
+})
+const travelResult = (before, during, after) => {
+  if (!before.length || before.length !== during.length || before.length !== after.length) return false
+  const deltas = during.map((y, i) => y - before[i])
+  return deltas.some((dy) => dy < -0.001) && deltas.every((dy) => dy < 0.00001) &&
+    after.every((y, i) => Math.abs(y - before[i]) < 0.00001)
+}
+for (const code of ['KeyG', 'Space', 'Enter', 'ArrowUp', 'ArrowLeft', 'F1', 'Numpad7', 'NumpadEqual', 'ShiftLeft', 'Escape', 'ControlLeft', 'CapsLock']) {
+  const before = await keyHeights()
+  await page.evaluate((key) => window.__msx.interactions.pressKey(key), code)
+  await page.waitForTimeout(350)
+  const during = await keyHeights()
+  await page.evaluate((key) => window.__msx.interactions.releaseKey(key), code)
+  await page.waitForTimeout(650)
+  check(`I13:${code}`, 'capa afunda e retorna ao assento', travelResult(before, during, await keyHeights()))
+}
+
+// Positive pointer proof: project the real G proxy, then drive actual mouse events.
+await page.evaluate(() => {
+  window.__msx.hud.setChromeVisible(false)
+  window.__msxCamera({ azimuth: 10, elevation: 42, distance: 0.24, target: [-0.02, 0.01, 0.25] })
+})
+await page.waitForTimeout(300)
+const keyPoint = await page.evaluate(() => {
+  const { scene, engine, three } = window.__msx
+  let key = null
+  scene.traverse((object) => { if (!key && object.userData?.keyCode === 'KeyG') key = object })
+  if (!key) throw new Error('G key proxy missing')
+  const point = key.getWorldPosition(new three.Vector3()).project(engine.camera)
+  return { x: (point.x + 1) * innerWidth / 2, y: (1 - point.y) * innerHeight / 2 }
+})
+const pointerBefore = await keyHeights()
+await page.mouse.move(keyPoint.x, keyPoint.y)
+await page.mouse.down()
+await page.waitForTimeout(350)
+const pickedKey = await page.evaluate(() => window.__msx.interactions.picker.activeHit?.keyCode)
+const pointerDuring = await keyHeights()
+await page.mouse.up()
+await page.waitForTimeout(650)
+check('I14', 'ponteiro real pressiona G e solta sua capa', pickedKey === 'KeyG' && travelResult(pointerBefore, pointerDuring, await keyHeights()))
+await page.evaluate(() => { window.__msx.cameraRig.resetPose(true); window.__msx.hud.setChromeVisible(true) })
 
 // O painel mobile precisa continuar fechável depois de rolar: o cabeçalho fica visível,
 // tocar fora fecha e o grip aceita um gesto curto para baixo.
@@ -268,8 +401,9 @@ const mobilePage = await browser.newPage({
   isMobile: true,
   hasTouch: true,
 })
-await mobilePage.goto('http://localhost:5173/', { waitUntil: 'networkidle' })
-await mobilePage.waitForFunction(() => window.__msxReady === true, { timeout: 60_000 })
+collectErrors(mobilePage)
+await mobilePage.goto(targetUrl(), { waitUntil: 'networkidle' })
+await mobilePage.waitForFunction(() => window.__msxReady === true, null, { timeout: 60_000 })
 await mobilePage.click('.hud__sheet-toggle')
 await mobilePage.waitForTimeout(400)
 const mobileSheet = await mobilePage.evaluate(() => {
@@ -341,7 +475,29 @@ const closedBySwipe = await mobilePage.evaluate(() => {
   return document.querySelector('.hud')?.getAttribute('data-sheet') === 'closed'
 })
 check('I11d', 'arrastar o grip para baixo fecha o painel mobile', closedBySwipe === true)
+await mobilePage.click('.hud__sheet-toggle')
+await mobilePage.keyboard.press('Shift+Tab')
+const reverseFocus = await mobilePage.evaluate(() => ({
+  inside: document.querySelector('.hud__console').contains(document.activeElement),
+  last: document.activeElement?.getAttribute('aria-pressed') !== null &&
+    document.activeElement?.textContent.includes('Rotação automática'),
+}))
+await mobilePage.keyboard.press('Tab')
+const forwardFocus = await mobilePage.evaluate(() => document.activeElement?.matches('.hud__sheet-close'))
+check('I11e', 'Tab e Shift+Tab mantêm o foco dentro do painel modal', reverseFocus.inside && reverseFocus.last && forwardFocus)
+await mobilePage.keyboard.press('Escape')
+check('I11f', 'Escape fecha e restaura o foco', await mobilePage.evaluate(() =>
+  document.querySelector('.hud')?.getAttribute('data-sheet') === 'closed' &&
+  document.activeElement?.matches('.hud__sheet-toggle')))
 await mobilePage.close()
+
+// Native buttons own Space/Enter; the emulator must not consume those strokes.
+const powerBeforeKeyboardClick = await page.evaluate(() => window.__msx.interactions.getState().power.on)
+await page.locator('.hud__btn--primary').focus()
+await page.keyboard.press('Space')
+const powerAfterKeyboardClick = await page.evaluate(() => window.__msx.interactions.getState().power.on)
+check('I15', 'Espaço ativa o botão focado sem ir para o MSX', powerAfterKeyboardClick !== powerBeforeKeyboardClick)
+await page.keyboard.press('Space')
 
 // Última sonda: destrutiva apenas para esta página descartável. Um PostFX quebrado
 // precisa parar o motor e marcar a saúde como falsa, nunca virar render direto silencioso.
@@ -364,5 +520,7 @@ check(
 
 const fails = R.filter((r) => !r.pass).length
 console.log(`\n${R.length - fails}/${R.length} PASS`)
-await browser.close()
-process.exit(fails ? 1 : 0)
+process.exitCode = fails ? 1 : 0
+} finally {
+  await browser.close()
+}

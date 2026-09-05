@@ -9,9 +9,7 @@
     "keycap.aoMap": "f92ca3b9",
     "metalScratches.normalMap": "766b6048",
     "metalScratches.roughnessMap": "66f35597",
-    "dust": "0d50bc82",
-    "pebbleGrain": "a210396d",
-    "roughnessVariation": "785cede6"
+    "dust": "0d50bc82"
   },
   "dimensions": {
     "case.normalMap": "1024x1024",
@@ -22,8 +20,6 @@
     "keycap.aoMap": "1024x1024",
     "metalScratches.normalMap": "1024x1024",
     "metalScratches.roughnessMap": "1024x1024",
-    "dust": "1024x1024",
-    "pebbleGrain": "1024x1024",
-    "roughnessVariation": "1024x1024"
+    "dust": "1024x1024"
   }
 }

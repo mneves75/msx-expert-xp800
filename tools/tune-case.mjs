@@ -21,7 +21,7 @@
  *   node tools/tune-case.mjs --sweep 1,0.8,0.6,0.5 # varre multiplicadores de albedo
  *   node tools/tune-case.mjs --env 0.2,0.4,0.6     # varre envMapIntensity do casco
  */
-import { chromium } from 'playwright'
+import { launchBrowser, targetUrl } from './browser.mjs'
 
 const args = process.argv.slice(2)
 const flag = (name, fallback) => {
@@ -33,7 +33,7 @@ const list = (name) => {
   return raw ? raw.split(',').map(Number).filter((n) => Number.isFinite(n)) : []
 }
 
-const URL_ = flag('url', 'http://localhost:5173/')
+const URL_ = targetUrl()
 const SWEEP = list('sweep')
 const ENV_SWEEP = list('env')
 
@@ -53,9 +53,7 @@ const ROI = {
   teclado: [0.31, 0.531, 0.06, 0.012],
 }
 
-const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--hide-scrollbars'],
-})
+const browser = await launchBrowser(['--ignore-gpu-blocklist', '--hide-scrollbars'])
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 })
 const errors = []
 page.on('pageerror', (error) => errors.push(String(error)))

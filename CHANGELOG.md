@@ -2,7 +2,27 @@
 
 Notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] — 2026-09-05
+
+### Fixed
+
+- Let seated cartridges settle at their physical detent so a powered-off scene can stop rendering without changing the insertion animation.
+- Keep HUD slot state authoritative when an insertion is rejected, and release owned instanced GPU buffers during teardown.
+- Derive desk contact shadows from visible geometry and actual instance transforms, removing an invisible quad that enlarged the console's shadow.
+- Keep Tab and Shift+Tab focus inside the mobile control panel while it is open.
+
+### Removed
+
+- Deleted HUD compatibility/discovery scaffolding, duplicate CRT processing paths, unused texture generators and cartridge variants, and superseded incident probes.
+
+### Changed
+
+- Added portable managed offline/online browser verification, behavioral input and state assertions, failing-control tests for capture/security guards, and an offline browser CI gate.
+- Consolidated agent instructions in AGENTS.md, documented isolated checkout setup, and embedded the package version in deployed HTML.
+
+### Security
+
+- Disabled WebMSX query-string configuration overrides, patched transitive nanoid to 3.3.18, and made deployment checks reject missing or broadened CSP directives.
 
 ## [0.2.0-beta7] — 2026-08-10
 

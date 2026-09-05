@@ -1278,7 +1278,6 @@ function capAging(code: string, tone: Exclude<Tone, never>): CapAging {
 // ---------------------------------------------------------------------------
 
 interface KeyRuntime {
-  readonly def: KeyDef
   readonly mesh: THREE.InstancedMesh
   readonly index: number
   readonly seat: THREE.Vector3
@@ -1307,6 +1306,7 @@ export class KeyboardModule implements SceneModule {
   private renderer: THREE.WebGLRenderer | null = null
   private readonly dirty = new Set<THREE.InstancedMesh>()
   private readonly geometries: THREE.BufferGeometry[] = []
+  private readonly instances: THREE.InstancedMesh[] = []
   private readonly materials: THREE.Material[] = []
   private readonly textures: THREE.Texture[] = []
   private readonly toneCache = new Map<Tone, THREE.MeshPhysicalMaterial>()
@@ -1623,6 +1623,7 @@ export class KeyboardModule implements SceneModule {
     const foot = new THREE.CylinderGeometry(0.007, 0.0075, 0.0025, 16)
     this.geometries.push(foot)
     const feet = new THREE.InstancedMesh(foot, ctx.materials.rubber(), 4)
+    this.instances.push(feet)
     feet.name = 'teclado-pes'
     feet.castShadow = true
     const spots: readonly (readonly [number, number])[] = [
@@ -1713,6 +1714,8 @@ export class KeyboardModule implements SceneModule {
   }
 
   dispose(): void {
+    for (const mesh of this.instances) mesh.dispose()
+    this.instances.length = 0
     for (const geometry of this.geometries) geometry.dispose()
     for (const material of this.materials) material.dispose()
     for (const texture of this.textures) texture.dispose()
@@ -1837,7 +1840,6 @@ export class KeyboardModule implements SceneModule {
         cacheKey: 'xp800-teclado',
       },
     )
-    this.textures.push(atlas.map, atlas.normalMap, atlas.roughnessMap)
     this.capAtlas = atlas
 
     const cellOf = (id: string): AtlasCell => {
@@ -1874,6 +1876,7 @@ export class KeyboardModule implements SceneModule {
       this.geometries.push(geometry)
 
       const mesh = new THREE.InstancedMesh(geometry, this.toneMaterial(ctx, first.tone), bucket.length)
+      this.instances.push(mesh)
       mesh.name = `teclas-${key}`
       mesh.castShadow = true
       mesh.receiveShadow = true
@@ -1964,6 +1967,7 @@ export class KeyboardModule implements SceneModule {
       this.geometries.push(geometry)
 
       const mesh = new THREE.InstancedMesh(geometry, material, 2)
+      this.instances.push(mesh)
       mesh.name = `teclas-cursor-${shape}`
       mesh.castShadow = true
       mesh.receiveShadow = true
@@ -2063,7 +2067,6 @@ export class KeyboardModule implements SceneModule {
     yaw: number,
   ): void {
     const runtime: KeyRuntime = {
-      def,
       mesh,
       index,
       seat: seat.clone(),

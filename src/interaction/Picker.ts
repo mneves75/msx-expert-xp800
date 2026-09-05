@@ -27,10 +27,7 @@ import type { InteractiveUserData, PartId } from '../core/types'
  * The 89 keycaps render from a handful of `InstancedMesh`es, so they carry no per-key
  * userData. `Keyboard.ts` solves this with an invisible, correctly-sized proxy box per
  * key that *does* carry the tag — three's raycaster ignores `visible`, so the proxies
- * cost nothing to draw and everything still hit-tests per key. The picker also supports
- * the direct route: an `InstancedMesh` tagged with `instanceKeys` / `instanceLabels`
- * resolves `intersection.instanceId` into a `keyCode` and label, so a future keyboard
- * that drops the proxies keeps working.
+ * cost nothing to draw and everything still hit-tests per key.
  *
  * ## Pointer model
  *
@@ -156,22 +153,6 @@ interface OcclusionTarget {
 }
 
 type PickCandidate = TaggedTarget | OcclusionTarget
-
-/**
- * Per-instance identity for a tagged `InstancedMesh`. Accepts an array indexed by
- * `instanceId` or a record keyed by it — whichever the geometry's author found natural.
- */
-function readInstanceEntry(source: unknown, instanceId: number): string | undefined {
-  if (Array.isArray(source)) {
-    const value = (source as readonly unknown[])[instanceId]
-    return typeof value === 'string' ? value : undefined
-  }
-  if (isRecord(source)) {
-    const value = source[String(instanceId)]
-    return typeof value === 'string' ? value : undefined
-  }
-  return undefined
-}
 
 /** Can the ray keep going through this mesh, or does it stop here? */
 function isSeeThrough(object: THREE.Object3D): boolean {
@@ -309,19 +290,6 @@ export class RaycastPicker {
   invalidate(): void {
     this.hoverStale = true
     this.pickSetDirty = true
-  }
-
-  get hovered(): PickHit | null {
-    return this.hoverHit
-  }
-
-  get pressed(): PickHit | null {
-    return this.activeHit
-  }
-
-  /** True while the pointer is a mouse or pen — i.e. hover and tooltips make sense. */
-  get fine(): boolean {
-    return this.pointerIsFine
   }
 
   /**
@@ -537,22 +505,12 @@ export class RaycastPicker {
   ): PickHit {
     const instanceId = intersection.object === object ? intersection.instanceId : undefined
 
-    let keyCode = typeof data['keyCode'] === 'string' ? data['keyCode'] : undefined
-    let label = typeof data['label'] === 'string' ? data['label'] : ''
-
-    if (instanceId !== undefined) {
-      const instanceKey = readInstanceEntry(data['instanceKeys'], instanceId)
-      if (instanceKey !== undefined) keyCode = instanceKey
-      const instanceLabel = readInstanceEntry(data['instanceLabels'], instanceId)
-      if (instanceLabel !== undefined) label = instanceLabel
-    }
-
     return {
       object,
       partId,
-      label,
+      label: typeof data['label'] === 'string' ? data['label'] : '',
       cursor: readCursor(data['cursor']),
-      keyCode,
+      keyCode: typeof data['keyCode'] === 'string' ? data['keyCode'] : undefined,
       instanceId,
       point: intersection.point,
       distance: intersection.distance,
@@ -675,16 +633,6 @@ export class RaycastPicker {
     node.style.opacity = '0'
     node.style.transform = 'translate3d(0,4px,0)'
     node.setAttribute('aria-hidden', 'true')
-  }
-
-  /** Let the HUD suppress the built-in tooltip and render hover text itself. */
-  setTooltipVisible(visible: boolean): void {
-    if (!visible) {
-      window.clearTimeout(this.tooltipTimer)
-      this.hideTooltip()
-    } else if (this.hoverHit !== null) {
-      this.updateTooltip(this.hoverHit)
-    }
   }
 
   // ── Pointer plumbing ───────────────────────────────────────────────────────

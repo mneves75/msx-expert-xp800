@@ -1,10 +1,10 @@
 import type * as THREE from 'three'
 
-import type { PowerState, ScreenSource } from '../core/types.ts'
+import type { ScreenSource } from '../core/types.ts'
 import {
   CrtProcessor,
   CrtWarmup,
-  isWebGLRenderer,
+  type CrtProcessorOptions,
   type CrtTuning,
 } from './CrtShader.ts'
 import { ProceduralScreen } from './ProceduralScreen.ts'
@@ -15,10 +15,9 @@ import {
   type WebMsxFailure,
 } from './WebMsxBridge.ts'
 
-export { CrtProcessor, CrtWarmup, DEFAULT_CRT_TUNING, isWebGLRenderer } from './CrtShader.ts'
+export { CrtProcessor, CrtWarmup, DEFAULT_CRT_TUNING } from './CrtShader.ts'
 export type { CrtProcessorOptions, CrtTuning } from './CrtShader.ts'
 export { ProceduralScreen, TMS9918_PALETTE } from './ProceduralScreen.ts'
-export type { ProceduralScreenOptions } from './ProceduralScreen.ts'
 export {
   WebMsxBridge,
   WebMsxUnavailableError,
@@ -79,18 +78,13 @@ function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal | undefined):
  *
  * Tenta o WebMSX; se ele não puder ser usado — CDN fora, rede bloqueada, SRI
  * recusada, canvas contaminado — cai no renderer procedural sem baixar o padrão
- * visual. Quem venceu fica exposto em {@link ScreenSourceHandle.kind}.
+ * visual. Quem venceu fica exposto em {@link ScreenPipeline.kind}.
  *
  * O download de 1,5 MB só acontece em `start()`, isto é, ao ligar a máquina —
  * nunca no carregamento da página.
  */
 
-export interface CreateScreenSourceOptions extends WebMsxBridgeOptions {
-  /**
-   * Renderer da cena. Presente, o {@link ScreenPipeline} roda o passe do tubo
-   * sozinho dentro de `update()` — não é preciso chamar `render()` à mão.
-   */
-  readonly renderer?: THREE.WebGLRenderer | undefined
+interface ScreenRouteOptions extends WebMsxBridgeOptions {
   /**
    * Força um caminho. `'procedural'` nem tenta a rede (útil para captura de
    * telas determinística e para desenvolvimento offline).
@@ -119,18 +113,9 @@ export interface CreateScreenSourceOptions extends WebMsxBridgeOptions {
   readonly onSourceChanged?: (source: ScreenSource) => void
 }
 
-export interface ScreenSourceHandle {
-  /** Fonte a ligar no pipeline. Já implementa `ScreenSource` por completo. */
-  readonly source: ScreenSource
-  /** Qual caminho está no ar agora; pode mudar numa promoção tardia. */
-  readonly kind: 'webmsx' | 'procedural'
-  /** Por que o WebMSX foi descartado, se foi. */
-  readonly fallbackReason: WebMsxFailure | null
-  /**
-   * Resolve quando a primeira fonte utilizável está visível. Pode resolver como
-   * procedural aos 500 ms e a rota promover para WebMSX depois.
-   */
-  readonly ready: Promise<'webmsx' | 'procedural'>
+export interface ScreenPipelineOptions extends ScreenRouteOptions {
+  readonly renderer: THREE.WebGLRenderer
+  readonly crt?: CrtProcessorOptions
 }
 
 /**
@@ -143,12 +128,7 @@ class RoutedScreenSource implements ScreenSource {
   public webmsx: WebMsxBridge | null = null
   public fallbackReason: WebMsxFailure | null = null
 
-  /**
-   * Opções repassadas às fontes internas, **sem** o renderer: quem compõe é
-   * quem manda no tubo. Se o renderer vazasse para cá, cada fonte montaria o
-   * próprio `CrtProcessor` e o vidro seria aplicado duas vezes.
-   */
-  private readonly innerOptions: CreateScreenSourceOptions
+  private readonly innerOptions: WebMsxBridgeOptions
 
   private active: ScreenSource
   private firstUsable = false
@@ -174,11 +154,9 @@ class RoutedScreenSource implements ScreenSource {
    */
   private localRom: Uint8Array | null = null
 
-  public constructor(private readonly options: CreateScreenSourceOptions) {
+  public constructor(private readonly options: ScreenRouteOptions) {
     this.innerOptions = {
       ...options,
-      renderer: undefined,
-      crt: undefined,
       romProvider: async (romId: string): Promise<Uint8Array | null> => {
         if (romId === 'preto-generico' && this.localRom !== null) return this.localRom
         return (await options.romProvider?.(romId)) ?? null
@@ -610,29 +588,6 @@ function describeFailure(reason: WebMsxFailure): string {
 }
 
 /**
- * Cria a fonte de vídeo. Retorna na hora, sem tocar na rede: o carregamento do
- * WebMSX acontece dentro de `handle.source.start()`, chamado pela sequência de
- * energia.
- */
-export function createScreenSource(
-  options: CreateScreenSourceOptions = {},
-): ScreenSourceHandle {
-  const routed = new RoutedScreenSource(options)
-  return {
-    source: routed,
-    get kind(): 'webmsx' | 'procedural' {
-      return routed.kind
-    },
-    get fallbackReason(): WebMsxFailure | null {
-      return routed.fallbackReason
-    },
-    ready: routed.ready,
-  }
-}
-
-export type ScreenPipelineOptions = CreateScreenSourceOptions
-
-/**
  * Conveniência: fonte + tubo num objeto só.
  *
  * `texture` já é a saída processada pelo {@link CrtProcessor} e tem identidade
@@ -640,18 +595,14 @@ export type ScreenPipelineOptions = CreateScreenSourceOptions
  * no boot e nunca mais pensar nisso, inclusive quando o WebMSX substituir o
  * renderer procedural no meio do caminho.
  *
- * Com `renderer` nas opções, o passe do tubo anda dentro de `update()` e a
- * rampa de aquecimento se conduz sozinha a partir de `start()`/`stop()`:
+ * O passe do tubo anda dentro de `update()` e a rampa de aquecimento se conduz
+ * a partir de `start()`/`stop()`:
  * ```ts
  * const tela = new ScreenPipeline({ renderer })
  * monitor.setScreenTexture(tela.texture)   // uma vez, no boot
  * // a cada frame, antes do render da cena:
  * tela.update(dt)
- * tela.setPower(monitor.power)             // opcional: assume a rampa
  * ```
- *
- * Sem `renderer`, quem compõe chama `render(renderer, dt)` no ponto do laço que
- * preferir — sempre antes do render principal.
  */
 export class ScreenPipeline implements ScreenSource {
   private static readonly CRT_FRAME_INTERVAL = 1 / 60
@@ -659,8 +610,7 @@ export class ScreenPipeline implements ScreenSource {
 
   public readonly crt: CrtProcessor
   private readonly routed: RoutedScreenSource
-  private readonly handle: ScreenSourceHandle
-  private readonly renderer: THREE.WebGLRenderer | null
+  private readonly renderer: THREE.WebGLRenderer
   private readonly autoSizeCrt: boolean
   private readonly warmup = new CrtWarmup()
   private readonly onNotice: ((message: string) => void) | undefined
@@ -670,24 +620,23 @@ export class ScreenPipeline implements ScreenSource {
   private processingFailed = false
   private disposed = false
 
-  public constructor(options: ScreenPipelineOptions = {}) {
-    const forward: CreateScreenSourceOptions = {
-      ...options,
+  public constructor(options: ScreenPipelineOptions) {
+    const { renderer, crt, ...routeOptions } = options
+    this.routed = new RoutedScreenSource({
+      ...routeOptions,
       onSourceChanged: (source) => {
         this.crt.setSource(source.texture, source.width, source.height)
         this.markCrtDirty()
         options.onSourceChanged?.(source)
       },
-    }
-    this.handle = createScreenSource(forward)
-    this.routed = this.handle.source as RoutedScreenSource
-    this.renderer = isWebGLRenderer(options.renderer) ? options.renderer : null
-    this.autoSizeCrt = this.renderer !== null && options.crt?.width === undefined && options.crt?.height === undefined
+    })
+    this.renderer = renderer
+    this.autoSizeCrt = crt?.width === undefined && crt?.height === undefined
     this.onNotice = options.onNotice
     this.crt = new CrtProcessor(this.routed.texture, {
       sourceWidth: this.routed.width,
       sourceHeight: this.routed.height,
-      ...options.crt,
+      ...crt,
     })
   }
 
@@ -700,7 +649,7 @@ export class ScreenPipeline implements ScreenSource {
   }
 
   public get ready(): Promise<'webmsx' | 'procedural'> {
-    return this.handle.ready
+    return this.routed.ready
   }
 
   public get width(): number {
@@ -766,9 +715,6 @@ export class ScreenPipeline implements ScreenSource {
       this.crt.setSource(this.routed.texture, this.routed.width, this.routed.height)
       this.markCrtDirty()
     }
-    // Com renderer próprio o passe do tubo anda sozinho; sem ele, quem compõe
-    // chama `render()` no ponto que preferir do laço.
-    if (this.renderer === null) return
     this.updateCrtSize(this.renderer)
     const tickDt = Math.max(dt, 0)
     this.crtFrameDebt += tickDt
@@ -789,32 +735,9 @@ export class ScreenPipeline implements ScreenSource {
     this.renderCrt(this.renderer, renderDt)
   }
 
-  /** Liga a rampa 0→1 do tubo à sequência de energia (SPEC §8). */
-  public setPower(state: PowerState): void {
-    this.setWarmup(state.on ? state.warmth : 0)
-  }
-
-  public setWarmup(value: number): void {
-    this.warmup.set(value)
-    this.crt.setWarmup(value)
-    this.markCrtDirty()
-  }
-
   public setTuning(patch: Partial<CrtTuning>): void {
     this.crt.setTuning(patch)
     this.markCrtDirty()
-  }
-
-  /**
-   * Roda o passe do tubo manualmente. Só é necessário quando o pipeline foi
-   * construído sem renderer; chame antes do render principal da cena.
-   */
-  public render(renderer: THREE.WebGLRenderer, dt: number): void {
-    if (this.disposed) return
-    this.updateCrtSize(renderer)
-    this.crt.setWarmup(this.warmup.update(dt))
-    this.crtDirty = false
-    this.renderCrt(renderer, dt)
   }
 
   public dispose(): void {

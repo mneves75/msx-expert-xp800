@@ -36,14 +36,11 @@ jobs:
       - name: Dependency security audit
         run: pnpm audit --audit-level moderate
 
-      - name: ast-grep lint
-        run: pnpm lint
+      - name: Install verification browser
+        run: pnpm exec playwright install --with-deps chromium
 
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Build
-        run: pnpm build
+      - name: Build and offline verification
+        run: pnpm verify:all
 
       - name: Built-artifact leakage scan
         run: |

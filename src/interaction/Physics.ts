@@ -42,12 +42,6 @@ export function clamp01(value: number): number {
   return clamp(value, 0, 1)
 }
 
-/** Frame-rate independent exponential approach. `rate` is in 1/s. */
-export function damp(current: number, target: number, rate: number, dt: number): number {
-  if (!(dt > 0)) return current
-  return target + (current - target) * Math.exp(-rate * dt)
-}
-
 function finite(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback
 }
@@ -360,19 +354,7 @@ export class CartridgeInsertion {
     const h = total / steps
 
     for (let i = 0; i < steps; i++) {
-      const u = this.position
-      const driveForce = this.drive * (this.goal - u)
-
-      // Friction ramps in over the second half of the stroke, where the PCB fingers are.
-      const engagement = smoothstep(0.32, 0.78, u)
-      const resistance = this.friction * engagement * Math.tanh(this.velocity * 24)
-
-      // −dU/du for U(u) = −A·exp(−s²), s = (u − seat)/w.
-      const s = (u - this.seat) / this.detentWidth
-      const detent = (-2 * this.detentStrength * s * Math.exp(-s * s)) / this.detentWidth
-
-      const acceleration = driveForce - resistance + detent - this.damping * this.velocity
-      this.velocity += acceleration * h
+      this.velocity += this.acceleration() * h
       this.position += this.velocity * h
 
       if (this.position <= 0) {
@@ -410,7 +392,26 @@ export class CartridgeInsertion {
   }
 
   get moving(): boolean {
-    return Math.abs(this.velocity) > 1e-4 || Math.abs(this.goal - this.position) > 1e-4
+    // The detent balances the drive before u = 1. Distance to the command never
+    // reaches zero; force and velocity do, without changing the seated pose.
+    return (
+      Math.abs(this.velocity) > 1e-4 ||
+      Math.abs(this.acceleration()) > 1e-3 ||
+      !this.wobbleX.isSettled() ||
+      !this.wobbleZ.isSettled()
+    )
+  }
+
+  private acceleration(): number {
+    const u = this.position
+    const driveForce = this.drive * (this.goal - u)
+    // Friction rises where the PCB fingers engage the connector.
+    const engagement = smoothstep(0.32, 0.78, u)
+    const resistance = this.friction * engagement * Math.tanh(this.velocity * 24)
+    // −dU/du for the detent well U(u) = −A·exp(−s²).
+    const s = (u - this.seat) / this.detentWidth
+    const detent = (-2 * this.detentStrength * s * Math.exp(-s * s)) / this.detentWidth
+    return driveForce - resistance + detent - this.damping * this.velocity
   }
 
   /** Roll of the cartridge in its rails, radians. */

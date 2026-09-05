@@ -1,8 +1,6 @@
-import { chromium } from 'playwright'
+import { launchBrowser, targetUrl } from './browser.mjs'
 
-const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=metal', '--enable-gpu'],
-})
+const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors = []
 
@@ -14,7 +12,7 @@ page.on('console', (message) => {
 try {
   // Carrega um módulo diretamente para obter a origem do Vite sem executar o
   // bootstrap/HMR da aplicação, que não faz parte desta verificação unitária.
-  await page.goto('http://localhost:5173/src/emulator/__checks__.ts', {
+  await page.goto(new URL('/src/emulator/__checks__.ts', targetUrl()).href, {
     waitUntil: 'domcontentloaded',
   })
   const result = await page.evaluate(async () => {

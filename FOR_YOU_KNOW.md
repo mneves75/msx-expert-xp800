@@ -8,9 +8,13 @@ The result is closer to a functioning film prop than a static 3D model.
 ## Architecture
 
 `src/core/types.ts` is the constitution: every physical object implements `SceneModule`,
-and `Engine` composes those modules without knowing their internals. Modules never import
-one another. They share contracts and `MaterialLibrary`, which keeps every plastic and
+and `Engine` composes those modules without knowing their internals. Physical models
+share contracts and `MaterialLibrary`, which keeps every plastic and
 metal surface in the same photographic world.
+
+The interaction layer coordinates the models through explicit APIs. The HUD reads that
+layer's state through one subscription, like a dashboard wired to the instrument panel.
+It does not guess whether an operation succeeded or maintain a second copy of slot state.
 
 ```text
 Engine
@@ -60,6 +64,16 @@ shadow atlas is frozen between real changes.
 
 ## Lessons worth keeping
 
+- **A seated cartridge can be at rest before reaching its commanded depth.** Connector
+  friction and the detent balance the spring near 95% travel. Comparing position with
+  the command kept the entire renderer awake forever; checking force and velocity lets
+  it sleep without changing the cartridge's physical trajectory or seated pose.
+- **Disposing geometry does not dispose instance buffers.** An InstancedMesh owns its
+  matrix/color buffers separately. Each model releases those buffers explicitly, while
+  shared atlas textures remain owned by the central cache.
+- **A guard must prove it can reject a bad result.** Missing screen samples and empty
+  interaction placeholders once passed verification. Required scene data and observed
+  behavior now determine success, with planted failures testing the guards themselves.
 - **The most expensive thing in the frame was a picture nobody saw.** SSAO needed a
   normal buffer, and the NormalPass that produced it re-drew the entire scene a second
   time — 124 of 284 desktop draw calls for an intermediate no viewer ever looks at.

@@ -49,6 +49,25 @@ Curated project decisions and measurements. Read this with the newest
   reference remains black under flash; the former `#232323` and 0.80/0.30 response lifted
   and shifted blue under IBL.
 
+## Audit evidence — 2026-09-05
+
+- At the same desktop profile pose, scene submissions fell from **112 to 110**,
+  frozen/full submissions from **151/245 to 149/243**, and shader programs from
+  **78 to 74**. These are work counters, not a claimed frame-time improvement;
+  interleaved timing samples remained noisy. Mobile simulation measured **108**
+  scene submissions at 390×844, requested DPR 3, effective DPR 2.
+- A seated cartridge formerly kept the powered-off scene rendering because its
+  detent equilibrium differed from the commanded endpoint. The corrected rest
+  predicate preserves the trajectory and yields **zero** renderer submissions
+  during the one-second settled check. The physics regression covers 30/60/144 Hz.
+- Real WebGL disposal verification freed all **36** uploaded instance attributes.
+  The nine retained procedural texture hashes are unchanged.
+- The managed offline verification passes build, lint, guard controls, key mapping,
+  textures, physics and **43/43** interaction checks. Online verification also plays
+  the real WebMSX game through movement, wall death, restart and joystick input.
+- Detailed decisions and release evidence are in `memory/2026-09-05.md` and the
+  audit plan. Physical mobile hardware and non-Apple GPUs remain unverified.
+
 ## Performance evidence — 2026-08-07
 
 - At 1920×1080 DPR 1, scene draw calls fell from **258 to 137**, full/frozen submissions

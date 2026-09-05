@@ -779,6 +779,7 @@
   .hud[data-sheet='open'] .hud__console {
     transform: none;
     visibility: visible;
+    transition-property: transform;
   }
 
   .hud[data-sheet='open'] .hud__sheet-toggle {

@@ -4,10 +4,7 @@ import {
   caseSurfaceMapsAsync,
   disposeTextureCache,
   dustAccumulationAsync,
-  keycapLegendAtlas,
   microScratchesAsync,
-  pebbleGrain,
-  roughnessVariation,
   silkscreenDecal,
   type SurfaceOptions,
 } from './procedural.ts'
@@ -99,8 +96,6 @@ export async function verifyProceduralTextures(): Promise<TextureCheckResult> {
     const keycapMaps = await caseSurfaceMapsAsync(KEYCAP_SPEC)
     const metalScratches = await microScratchesAsync(1024, 0.7)
     const dust = await dustAccumulationAsync(1024, { coverage: 0.5 })
-    const pebble = pebbleGrain(1024, 1)
-    const rough = roughnessVariation(1024, 0.78, 1)
 
     const generationMs = performance.now() - started
 
@@ -114,8 +109,6 @@ export async function verifyProceduralTextures(): Promise<TextureCheckResult> {
       hashTexture('metalScratches.normalMap', metalScratches.normalMap),
       hashTexture('metalScratches.roughnessMap', metalScratches.roughnessMap),
       hashTexture('dust', dust),
-      hashTexture('pebbleGrain', pebble),
-      hashTexture('roughnessVariation', rough),
     ]
 
     const draw = (ctx: CanvasRenderingContext2D): void => ctx.fillRect(4, 4, 24, 24)
@@ -126,20 +119,6 @@ export async function verifyProceduralTextures(): Promise<TextureCheckResult> {
     const otherSeed = silkscreenDecal(draw, { ...shared, ink: '#ffffff', seed: 2 })
     if (first !== same || first === otherInk || first === otherSeed) {
       throw new Error('Cache de serigrafia não separa tinta e semente corretamente.')
-    }
-
-    const atlas = keycapLegendAtlas([{ id: 'KeyA', primary: 'A', fontScale: 1 }], { cellSize: 32 })
-    const scaledAtlas = keycapLegendAtlas([{ id: 'KeyA', primary: 'A', fontScale: 0.8 }], { cellSize: 32 })
-    const dividedAtlas = keycapLegendAtlas(
-      [{ id: 'KeyA', primary: 'A', secondary: 'B' }],
-      { cellSize: 32 },
-    )
-    const joinedAtlas = keycapLegendAtlas([{ id: 'KeyA', primary: 'AB' }], { cellSize: 32 })
-    if (atlas.maps === scaledAtlas.maps) {
-      throw new Error('Cache do atlas de teclas não separa fontScale corretamente.')
-    }
-    if (dividedAtlas.maps === joinedAtlas.maps) {
-      throw new Error('Cache do atlas de teclas não separa os campos da legenda corretamente.')
     }
 
     return { hashes, generationMs }

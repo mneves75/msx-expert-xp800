@@ -1,8 +1,9 @@
 import * as THREE from 'three'
 import type { ModuleContext, PowerState, SceneModule, ScreenSource } from '../core/types'
+import type { ScreenPipeline } from '../emulator/index'
 import { CARTRIDGE_DIMENSIONS, CARTRIDGE_MANIFEST } from '../models/Cartridge'
-import * as CrtMonitorNamespace from '../models/CrtMonitor'
-import * as MainUnitNamespace from '../models/MainUnit'
+import { crtMonitorModule, type CrtMonitorModule } from '../models/CrtMonitor'
+import { MainUnit, type MainUnitModule, type MainUnitHandles } from '../models/MainUnit'
 import { RaycastPicker, type PickHit } from './Picker'
 import {
   CartridgeInsertion,
@@ -25,9 +26,8 @@ import {
  * - **The scene graph.** Interactive parts are tagged with `InteractiveUserData`; the
  *   keyboard and the joystick publish themselves on their root group's `userData`.
  * - **Named model singletons**, imported through the same specifiers `main.ts` uses.
- *   The CRT and main unit are validated against their capability guards and checked
- *   with `livesIn(..., scene)` before adoption, so a similarly shaped future export
- *   cannot be selected accidentally.
+ *   The CRT and main unit use their exported TypeScript contracts and are checked
+ *   with `livesIn(..., scene)` before adoption.
  *
  * Every adopted model handle remains optional. A missing CRT costs the screen, not the
  * scene: the covers still push, the keys still travel, nothing throws.
@@ -127,8 +127,8 @@ export interface InteractionsModule extends SceneModule, InteractionsHandle {}
 
 declare global {
   interface Window {
-    /** Meeting point for the HUD. See `src/ui/Hud.ts`. */
-    __msxInteractions?: unknown
+    /** Live handle for capture tools and browser diagnostics. */
+    __msxInteractions?: InteractionsHandle
   }
 }
 
@@ -183,23 +183,6 @@ function hasMethods(value: unknown, methods: readonly string[]): value is Record
   return isRecord(value) && methods.every((method) => typeof value[method] === 'function')
 }
 
-interface CrtLike {
-  readonly power: PowerState
-  readonly group: THREE.Group | null
-  setPower(on: boolean): void
-  setScreenTexture(texture: THREE.Texture): void
-  setBrightness(value: number): void
-  setContrast(value: number): void
-}
-
-function isCrtLike(value: unknown): value is CrtLike {
-  return (
-    hasMethods(value, ['setPower', 'setScreenTexture', 'setBrightness', 'setContrast']) &&
-    'group' in value &&
-    'power' in value
-  )
-}
-
 interface KeyboardLike {
   readonly keyCodes: readonly string[]
   pressKey(code: string): boolean
@@ -214,29 +197,10 @@ function isKeyboardLike(value: unknown): value is KeyboardLike {
 interface JoystickLike {
   setDirection(x: number, y: number): void
   setButton(id: 'a' | 'b', pressed: boolean): void
-  pressButton(id: 'a' | 'b', holdMs?: number): void
 }
 
 function isJoystickLike(value: unknown): value is JoystickLike {
-  return hasMethods(value, ['setDirection', 'setButton', 'pressButton'])
-}
-
-interface MainUnitHandlesLike {
-  readonly root: THREE.Object3D
-  readonly slotACoverPivot: THREE.Object3D
-  readonly slotBCoverPivot: THREE.Object3D
-  readonly slotAMouth: THREE.Object3D
-  readonly slotBMouth: THREE.Object3D
-  readonly powerSwitch: THREE.Object3D
-  readonly powerIndicator: THREE.Object3D
-  readonly coverPushAngle: number
-  readonly coverOpenAngle: number
-  readonly powerSwitchTravel: number
-}
-
-interface MainUnitLike {
-  readonly handles: MainUnitHandlesLike | null
-  setPower(state: PowerState): void
+  return hasMethods(value, ['setDirection', 'setButton'])
 }
 
 /** The slice of `CameraRig` this module drives. Structural — never imported. */
@@ -246,18 +210,6 @@ interface OrbitLike {
   notifyInteraction(): void
   resetPose(immediate?: boolean): void
   setAutoRotate(enabled: boolean): void
-}
-
-function isMainUnitLike(value: unknown): value is MainUnitLike {
-  if (!hasMethods(value, ['setPower'])) return false
-  const handles = value['handles']
-  if (!isRecord(handles)) return false
-  return (
-    handles['root'] instanceof THREE.Object3D &&
-    handles['slotACoverPivot'] instanceof THREE.Object3D &&
-    handles['slotAMouth'] instanceof THREE.Object3D &&
-    typeof handles['coverOpenAngle'] === 'number'
-  )
 }
 
 /** Only trust a module instance that owns objects actually present in this scene. */
@@ -408,11 +360,10 @@ const SWALLOW: ReadonlySet<string> = new Set([
   'F5',
 ])
 
-function isTextEntry(target: EventTarget | null): boolean {
+function isBrowserControl(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true
-  const tag = target.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+  return target.closest('input, textarea, select, button, a, [role="dialog"]') !== null
 }
 
 // ---------------------------------------------------------------------------
@@ -430,14 +381,14 @@ class Interactions implements InteractionsModule {
   private picker: RaycastPicker | null = null
 
   // Model handles — every one optional.
-  private crt: CrtLike | null = null
+  private crt: CrtMonitorModule | null = null
   private keyboard: KeyboardLike | null = null
   private joystick: JoystickLike | null = null
-  private mainUnit: MainUnitLike | null = null
-  private handles: MainUnitHandlesLike | null = null
+  private mainUnit: MainUnitModule | null = null
+  private handles: MainUnitHandles | null = null
 
   // Emulator.
-  private screen: ScreenSource | null = null
+  private screen: ScreenPipeline | null = null
   /** ROM local armada antes de o pipeline de vídeo existir (máquina desligada). */
   private pendingLocalRom: Uint8Array | null = null
   private screenBooting: Promise<void> | null = null
@@ -549,7 +500,7 @@ class Interactions implements InteractionsModule {
     // Model transforms must be final before any world-space pose is captured.
     this.scene.updateMatrixWorld(true)
 
-    await this.discoverModels()
+    this.discoverModels()
     this.collectSceneParts()
     this.buildSlots()
     this.collectCartridges()
@@ -727,7 +678,7 @@ class Interactions implements InteractionsModule {
 
   // ── Discovery ──────────────────────────────────────────────────────────────
 
-  private async discoverModels(): Promise<void> {
+  private discoverModels(): void {
     // From the scene graph: modules that publish themselves on their root group.
     this.scene.traverse((object) => {
       const data = object.userData
@@ -737,13 +688,13 @@ class Interactions implements InteractionsModule {
     })
 
     // Named singletons: these are the exact instances registered by `main.ts`.
-    const crt: CrtMonitorNamespace.CrtMonitorModule = CrtMonitorNamespace.crtMonitorModule
-    if (isCrtLike(crt) && livesIn(crt.group, this.scene)) {
+    const crt = crtMonitorModule
+    if (livesIn(crt.group, this.scene)) {
       this.crt = crt
     }
 
-    const mainUnit: MainUnitNamespace.MainUnitModule = MainUnitNamespace.MainUnit
-    if (isMainUnitLike(mainUnit) && livesIn(mainUnit.handles?.root, this.scene)) {
+    const mainUnit = MainUnit
+    if (livesIn(mainUnit.handles?.root, this.scene)) {
       this.mainUnit = mainUnit
       this.handles = mainUnit.handles
     }
@@ -757,8 +708,8 @@ class Interactions implements InteractionsModule {
     }
 
     if (this.crt !== null) {
-      this.brightness = clamp01(readNumber(this.crt, 'controls', 'brightness') ?? this.brightness)
-      this.contrast = clamp01(readNumber(this.crt, 'controls', 'contrast') ?? this.contrast)
+      this.brightness = clamp01(this.crt.controls.brightness)
+      this.contrast = clamp01(this.crt.controls.contrast)
     }
   }
 
@@ -1255,11 +1206,7 @@ class Interactions implements InteractionsModule {
     this.emulator = source.kind
     this.crt?.setScreenTexture(source.texture)
     // ROM local carregada com a máquina desligada: aplica agora que há pipeline.
-    if (this.pendingLocalRom !== null && hasMethods(source, ['setLocalRom'])) {
-      ;(source as unknown as { setLocalRom(rom: Uint8Array | null): void }).setLocalRom(
-        this.pendingLocalRom,
-      )
-    }
+    if (this.pendingLocalRom !== null) source.setLocalRom(this.pendingLocalRom)
     this.publish()
 
     try {
@@ -1567,9 +1514,7 @@ class Interactions implements InteractionsModule {
     // a ROM fica armada aqui e `resolveScreen` a aplica quando o pipeline subir.
     this.pendingLocalRom = bytes
     const screen = this.screen
-    if (screen !== null && hasMethods(screen, ['setLocalRom'])) {
-      ;(screen as unknown as { setLocalRom(rom: Uint8Array | null): void }).setLocalRom(bytes)
-    }
+    screen?.setLocalRom(bytes)
 
     // Cartucho preto já no compartimento: recarrega o conteúdo na fonte viva.
     // Fora dele: insere fisicamente no primeiro compartimento livre. Se não der
@@ -1914,7 +1859,7 @@ class Interactions implements InteractionsModule {
         return
       }
     }
-    if (isTextEntry(event.target)) return
+    if (isBrowserControl(event.target)) return
     if (event.ctrlKey || event.metaKey) return
 
     // Alt is the shortcut namespace (and L GRA / R GRA on the MSX, which still pass).
@@ -2148,7 +2093,6 @@ class Interactions implements InteractionsModule {
         console.error('[Interactions] assinante falhou:', error)
       }
     }
-    window.dispatchEvent(new CustomEvent('msx:state', { detail: state }))
   }
 
   private setNote(text: string, isError: boolean): void {
@@ -2190,45 +2134,12 @@ function isDescendant(node: THREE.Object3D, ancestor: THREE.Object3D): boolean {
   return false
 }
 
-function readNumber(source: unknown, group: string, field: string): number | null {
-  if (!isRecord(source)) return null
-  const container = source[group]
-  if (!isRecord(container)) return null
-  const value = container[field]
-  return typeof value === 'number' ? value : null
-}
-
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
 }
 
-function disposeIfPresent(value: unknown): void {
-  if (!isRecord(value)) return
-  const dispose = value['dispose']
-  if (typeof dispose === 'function') dispose.call(value)
-}
-
 /** Display names harvested from the cartridge manifest, id → pt-BR name. */
 const cartridgeNames = new Map<string, string>()
-
-function isScreenSource(value: unknown): value is ScreenSource {
-  if (
-    !hasMethods(value, [
-      'start',
-      'stop',
-      'reset',
-      'sendKey',
-      'insertCartridge',
-      'ejectCartridge',
-      'update',
-      'dispose',
-    ])
-  ) {
-    return false
-  }
-  const kind = value['kind']
-  return (kind === 'webmsx' || kind === 'procedural') && value['texture'] instanceof THREE.Texture
-}
 
 /**
  * Build the video source.
@@ -2241,18 +2152,12 @@ function isScreenSource(value: unknown): value is ScreenSource {
  * The import is dynamic so the emulator chunk is fetched on first power-on and never at
  * page load (SPEC §10).
  */
-async function loadScreenSource(ctx: ModuleContext): Promise<ScreenSource | null> {
+async function loadScreenSource(ctx: ModuleContext): Promise<ScreenPipeline | null> {
   try {
     const { ScreenPipeline } = await import('../emulator/index.ts')
     // Slots vazios ficam no BASIC procedural; o WebMSX entra quando há cartucho.
     // Sem isto o C-BIOS abre em "No cartridge found" e o teclado não faz nada.
-    const pipeline = new ScreenPipeline({ renderer: ctx.renderer, webMsxNeedsCartridge: true })
-    if (!isScreenSource(pipeline)) {
-      console.warn('[Interactions] o pipeline de vídeo não cumpriu o contrato ScreenSource.')
-      disposeIfPresent(pipeline)
-      return null
-    }
-    return pipeline
+    return new ScreenPipeline({ renderer: ctx.renderer, webMsxNeedsCartridge: true })
   } catch (error) {
     console.error('[Interactions] o módulo de vídeo falhou ao importar:', error)
     return null
@@ -2265,28 +2170,10 @@ async function loadScreenSource(ctx: ModuleContext): Promise<ScreenSource | null
 
 let singleton: Interactions | null = null
 
-/**
- * Build (or return) the interaction layer.
- *
- * `main.ts` probes this file — and the barrel next to it — for an entry point, and its
- * shape detection may legitimately call this factory more than once while it works out
- * what the export is. The singleton makes that free: the second call returns the same
- * object, and `Engine.register` is itself idempotent per module, so nothing is installed
- * twice and no listener is ever duplicated.
- */
-export function createInteractions(ctx?: ModuleContext): InteractionsModule {
+/** Build the interaction layer and expose its handle to capture tools. */
+export function createInteractions(ctx: ModuleContext): InteractionsModule {
   if (singleton !== null) return singleton
-  if (ctx === undefined) {
-    throw new Error('Interactions: é preciso um ModuleContext para montar a camada de interação.')
-  }
   singleton = new Interactions(ctx)
   window.__msxInteractions = singleton
-  // The HUD may already be mounted and waiting for exactly this.
-  window.dispatchEvent(new CustomEvent('msx:interactions', { detail: singleton }))
-  return singleton
-}
-
-/** The live interaction layer, or `null` before the scene is built. */
-export function getInteractions(): InteractionsModule | null {
   return singleton
 }

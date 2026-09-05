@@ -495,6 +495,7 @@ class StudioDesk implements DeskModule {
   // ── sombra de contato ──────────────────────────────────────────────────────
   private readonly contactBox = new THREE.Box3()
   private readonly meshBox = new THREE.Box3()
+  private readonly contactMatrix = new THREE.Matrix4()
 
   // Temporários do algoritmo de espelhamento — nada aloca por frame.
   private readonly reflectorPosition = new THREE.Vector3()
@@ -603,16 +604,25 @@ class StudioDesk implements DeskModule {
       // do seu pé — e a sombra viraria um retângulo preto óbvio ao redor da peça.
       this.contactBox.makeEmpty()
       child.updateWorldMatrix(true, true)
-      child.traverse((node) => {
+      child.traverseVisible((node) => {
         const mesh = node as THREE.Mesh
-        if (mesh.isMesh !== true || !mesh.visible) return
+        if (mesh.isMesh !== true) return
         const geometry = mesh.geometry
         if (geometry.boundingBox === null) geometry.computeBoundingBox()
         const bounds = geometry.boundingBox
         if (bounds === null) return
-        this.meshBox.copy(bounds).applyMatrix4(mesh.matrixWorld)
-        if (this.meshBox.min.y > 0.012 || this.meshBox.min.y < -0.05) return
-        this.contactBox.union(this.meshBox)
+        const instances = mesh instanceof THREE.InstancedMesh ? mesh : null
+        for (let i = 0; i < (instances?.count ?? 1); i++) {
+          if (instances !== null) {
+            instances.getMatrixAt(i, this.contactMatrix)
+            this.contactMatrix.premultiply(mesh.matrixWorld)
+          } else {
+            this.contactMatrix.copy(mesh.matrixWorld)
+          }
+          this.meshBox.copy(bounds).applyMatrix4(this.contactMatrix)
+          if (this.meshBox.min.y > 0.012 || this.meshBox.min.y < -0.05) continue
+          this.contactBox.union(this.meshBox)
+        }
       })
       if (this.contactBox.isEmpty()) continue
 

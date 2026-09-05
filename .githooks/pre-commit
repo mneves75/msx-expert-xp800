@@ -6,7 +6,7 @@
 # anyone opened the PNG. The linter's `no-syntax-error` rule points at exactly
 # that character, and it costs a fraction of a second.
 #
-# Enable in a fresh clone with:  git config core.hooksPath .githooks
+# Enable in a fresh clone with: pnpm setup:hooks
 set -e
 
 if ! pnpm exec ast-grep scan; then

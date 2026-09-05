@@ -2,8 +2,8 @@ import type * as THREE from 'three'
 
 /**
  * Shared contracts. Every model module implements `SceneModule` so the Engine can
- * compose them without knowing their internals. Agents build against this file and
- * never import each other directly.
+ * compose them without knowing their internals. Physical model modules share these
+ * contracts; the interaction layer coordinates their explicit control APIs.
  */
 
 /** Names of interactive parts, used for raycast hit-testing and the HUD. */

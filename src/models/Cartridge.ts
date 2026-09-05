@@ -3,7 +3,7 @@
  *
  * Um cartucho MSX de 1985 é uma casca de ABS em duas metades (tampa + fundo) com
  * uma língua de placa impressa saindo pela ponta de inserção. Este módulo constrói
- * quatro cartuchos distintos, todos procedurais: geometria de extrusão para a
+ * dois cartuchos distintos, todos procedurais: geometria de extrusão para a
  * casca (com o filete real das arestas e a linha de junção das metades), nervuras
  * de pega em geometria de verdade nas laterais, etiqueta de PAPEL com espessura
  * visível e canto levantado, e o conector de borda com 50 contatos dourados
@@ -204,6 +204,7 @@ function makeCanvas(width: number, height: number): Canvas2D {
 
 /** Recursos criados por este módulo — liberados em `dispose()`. */
 const owned = {
+  instances: [] as THREE.InstancedMesh[],
   geometries: [] as THREE.BufferGeometry[],
   materials: [] as THREE.Material[],
   textures: [] as THREE.Texture[],
@@ -312,57 +313,6 @@ function fitFont(
   return px
 }
 
-/** Marca ⊚ da Gradiente: anel externo com espiral interna. */
-function gradienteMark(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  r: number,
-  color: string,
-): void {
-  ctx.save()
-  ctx.strokeStyle = color
-  ctx.lineCap = 'round'
-  ctx.lineWidth = r * 0.17
-  ctx.beginPath()
-  ctx.arc(cx, cy, r * 0.94, 0, Math.PI * 2)
-  ctx.stroke()
-  ctx.beginPath()
-  const steps = 96
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps
-    const a = t * 2.15 * Math.PI * 2 + Math.PI * 0.25
-    const rr = r * 0.7 * (1 - t * 0.88)
-    const x = cx + Math.cos(a) * rr
-    const y = cy + Math.sin(a) * rr
-    if (i === 0) ctx.moveTo(x, y)
-    else ctx.lineTo(x, y)
-  }
-  ctx.lineWidth = r * 0.2
-  ctx.stroke()
-  ctx.restore()
-}
-
-function gradienteWordmark(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  h: number,
-  color: string,
-): number {
-  ctx.save()
-  gradienteMark(ctx, x + h * 0.5, y, h * 0.52, color)
-  ctx.fillStyle = color
-  ctx.font = `bold ${Math.round(h * 0.95)}px "Helvetica Neue", Helvetica, Arial, sans-serif`
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'middle'
-  const tx = x + h * 1.12
-  ctx.fillText('gradiente', tx, y + h * 0.04)
-  const width = h * 1.12 + ctx.measureText('gradiente').width
-  ctx.restore()
-  return width
-}
-
 /** Selo MSX: caixa vermelha, tipo branco (SPEC §3.2 — #CC2229). */
 function msxBadge(ctx: CanvasRenderingContext2D, x: number, y: number, h: number): void {
   const w = h * 1.95
@@ -375,29 +325,6 @@ function msxBadge(ctx: CanvasRenderingContext2D, x: number, y: number, h: number
   ctx.textBaseline = 'middle'
   ctx.font = `bold ${Math.round(h * 0.6)}px "Arial Black", "Helvetica Neue", Arial, sans-serif`
   ctx.fillText('MSX', x + w * 0.5, y + h * 0.56)
-  ctx.restore()
-}
-
-/** Filete horizontal fino, o padrão da identidade Expert (ver `Expert_Box.jpg`). */
-function pinstripes(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  step: number,
-  color: string,
-  lineWidth: number,
-): void {
-  ctx.save()
-  ctx.strokeStyle = color
-  ctx.lineWidth = lineWidth
-  for (let yy = y; yy <= y + h; yy += step) {
-    ctx.beginPath()
-    ctx.moveTo(x, yy)
-    ctx.lineTo(x + w, yy)
-    ctx.stroke()
-  }
   ctx.restore()
 }
 
@@ -541,74 +468,7 @@ const ARTE_ARCADE: LabelArt = {
   },
 }
 
-// ---- 2. Cartucho Gradiente ------------------------------------------------
-
-const ARTE_GRADIENTE: LabelArt = {
-  id: 'gradiente-basic',
-  titulo: 'BASIC ESTENDIDO',
-  subtitulo: 'CARTUCHO DE PROGRAMA',
-  papel: '#EDEBE3',
-  resolucao: 1024,
-  envelhecimento: 0.42,
-  desregistro: 0.0012,
-  fundo: (ctx, w, h) => {
-    ctx.fillStyle = '#EDEBE3'
-    ctx.fillRect(0, 0, w, h)
-    // Filetes finos: o padrão da caixa do Expert.
-    pinstripes(ctx, 0, h * 0.3, w, h * 0.7, h * 0.052, 'rgba(30,42,60,0.16)', Math.max(1, h * 0.006))
-    // Faixa superior verde-escuro (a cor do wordmark EXPERT).
-    ctx.fillStyle = '#1D4B3E'
-    ctx.fillRect(0, 0, w, h * 0.28)
-    ctx.fillStyle = '#2E7FB8'
-    ctx.fillRect(0, h * 0.28, w, h * 0.016)
-    // Bloco prateado do canto inferior direito.
-    const silver = ctx.createLinearGradient(0, h * 0.62, 0, h)
-    silver.addColorStop(0, '#C9C6BC')
-    silver.addColorStop(1, '#A8A49B')
-    ctx.fillStyle = silver
-    ctx.fillRect(w * 0.63, h * 0.62, w * 0.37, h * 0.38)
-  },
-  tinta: (ctx, w, h) => {
-    gradienteWordmark(ctx, w * 0.04, h * 0.145, h * 0.15, '#FFFFFF')
-
-    ctx.fillStyle = '#FFFFFF'
-    ctx.textAlign = 'right'
-    ctx.textBaseline = 'middle'
-    ctx.font = `${Math.round(h * 0.078)}px "Helvetica Neue", Helvetica, Arial, sans-serif`
-    ctx.fillText('PERSONAL COMPUTER', w * 0.96, h * 0.145)
-
-    const title = 'BASIC ESTENDIDO'
-    const font = (px: number): string =>
-      `bold ${Math.round(px)}px "Helvetica Neue", Helvetica, Arial, sans-serif`
-    const px = fitFont(ctx, title, w * 0.56, h * 0.2, font)
-    ctx.font = font(px)
-    ctx.textAlign = 'left'
-    ctx.fillStyle = '#17331F'
-    ctx.fillText(title, w * 0.045, h * 0.47)
-
-    ctx.font = `${Math.round(h * 0.075)}px "Helvetica Neue", Helvetica, Arial, sans-serif`
-    ctx.fillStyle = '#33383A'
-    ctx.fillText('CARTUCHO DE PROGRAMA', w * 0.045, h * 0.62)
-    ctx.fillText('EXPERT XP-800 · ROM 16 KB', w * 0.045, h * 0.73)
-
-    ctx.font = `${Math.round(h * 0.058)}px "Helvetica Neue", Helvetica, Arial, sans-serif`
-    ctx.fillStyle = '#4A4E50'
-    ctx.fillText('INDÚSTRIA BRASILEIRA', w * 0.045, h * 0.9)
-
-    msxBadge(ctx, w * 0.7, h * 0.68, h * 0.15)
-    ctx.textAlign = 'center'
-    ctx.font = `${Math.round(h * 0.05)}px "Helvetica Neue", Helvetica, Arial, sans-serif`
-    ctx.fillStyle = '#3A3733'
-    ctx.fillText('SISTEMA', w * 0.7 + h * 0.146, h * 0.645)
-
-    ctx.strokeStyle = 'rgba(40,44,46,0.55)'
-    ctx.lineWidth = Math.max(1, w * 0.0022)
-    roundRectPath(ctx, w * 0.011, h * 0.014, w * 0.978, h * 0.972, w * 0.008)
-    ctx.stroke()
-  },
-}
-
-// ---- 3. Cartucho genérico preto -------------------------------------------
+// ---- 2. Cartucho genérico preto -------------------------------------------
 
 const ARTE_GENERICO: LabelArt = {
   id: 'preto-generico',
@@ -680,93 +540,11 @@ const ARTE_GENERICO: LabelArt = {
   },
 }
 
-// ---- 4. Cartucho educativo ------------------------------------------------
-
-const ARTE_EDUCATIVO: LabelArt = {
-  id: 'educativo-verde',
-  titulo: 'MATEMÁTICA I',
-  subtitulo: 'SOFTWARE EDUCATIVO',
-  papel: '#F4F2EC',
-  resolucao: 1024,
-  envelhecimento: 0.5,
-  desregistro: 0.0016,
-  fundo: (ctx, w, h) => {
-    ctx.fillStyle = '#F4F2EC'
-    ctx.fillRect(0, 0, w, h)
-
-    // Cunha verde diagonal.
-    ctx.fillStyle = '#2E7D4F'
-    ctx.beginPath()
-    ctx.moveTo(0, 0)
-    ctx.lineTo(w * 0.46, 0)
-    ctx.lineTo(w * 0.3, h)
-    ctx.lineTo(0, h)
-    ctx.closePath()
-    ctx.fill()
-
-    // Formas geométricas soltas — o vocabulário gráfico de 1986.
-    ctx.fillStyle = '#E8B92A'
-    ctx.beginPath()
-    ctx.arc(w * 0.83, h * 0.29, h * 0.19, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.fillStyle = '#2E6FB0'
-    ctx.beginPath()
-    ctx.moveTo(w * 0.66, h * 0.94)
-    ctx.lineTo(w * 0.76, h * 0.64)
-    ctx.lineTo(w * 0.86, h * 0.94)
-    ctx.closePath()
-    ctx.fill()
-
-    ctx.fillStyle = '#C0392B'
-    ctx.fillRect(w * 0.87, h * 0.62, h * 0.2, h * 0.2)
-
-    // Filete fino sob o título.
-    ctx.fillStyle = '#2E7D4F'
-    ctx.fillRect(w * 0.36, h * 0.5, w * 0.2, h * 0.018)
-  },
-  tinta: (ctx, w, h) => {
-    ctx.fillStyle = '#FFFFFF'
-    ctx.textAlign = 'left'
-    ctx.textBaseline = 'middle'
-    ctx.save()
-    ctx.translate(w * 0.05, h * 0.5)
-    ctx.rotate(-Math.PI / 2)
-    ctx.font = `bold ${Math.round(h * 0.11)}px "Helvetica Neue", Helvetica, Arial, sans-serif`
-    ctx.textAlign = 'center'
-    ctx.fillText('EDUCATIVO', 0, 0)
-    ctx.restore()
-
-    const title = 'MATEMÁTICA I'
-    const font = (px: number): string =>
-      `bold ${Math.round(px)}px "Helvetica Neue", Helvetica, Arial, sans-serif`
-    const px = fitFont(ctx, title, w * 0.5, h * 0.21, font)
-    ctx.font = font(px)
-    ctx.textAlign = 'left'
-    ctx.fillStyle = '#1B3A2B'
-    ctx.fillText(title, w * 0.36, h * 0.34)
-
-    // As duas linhas de corpo param antes das formas geométricas da direita.
-    const corpo = (p: number): string =>
-      `${Math.round(p)}px "Helvetica Neue", Helvetica, Arial, sans-serif`
-    ctx.font = corpo(fitFont(ctx, 'SOFTWARE EDUCATIVO', w * 0.28, h * 0.078, corpo))
-    ctx.fillStyle = '#37474F'
-    ctx.fillText('SOFTWARE EDUCATIVO', w * 0.36, h * 0.63)
-    ctx.fillText('1.º GRAU · ROM 16 KB', w * 0.36, h * 0.74)
-
-    ctx.font = `bold ${Math.round(h * 0.062)}px "Helvetica Neue", Helvetica, Arial, sans-serif`
-    ctx.fillStyle = '#2E7D4F'
-    ctx.fillText('EDITORA MERIDIANO', w * 0.36, h * 0.89)
-
-    msxBadge(ctx, w * 0.63, h * 0.045, h * 0.1)
-  },
-}
-
 // ---------------------------------------------------------------------------
 // Manifesto
 // ---------------------------------------------------------------------------
 
-export type CartridgeId = 'arcade-vermelho' | 'gradiente-basic' | 'preto-generico' | 'educativo-verde'
+export type CartridgeId = 'arcade-vermelho' | 'preto-generico'
 
 /** Geometria e acabamento da etiqueta de papel colada na casca. */
 export interface LabelSpec {
@@ -829,22 +607,6 @@ export const CARTRIDGE_MANIFEST: readonly CartridgeInfo[] = [
     desgasteContatos: 0.75,
   },
   {
-    id: 'gradiente-basic',
-    nome: 'Gradiente BASIC Estendido',
-    descricao: 'Cartucho de programa da própria Gradiente, 16 KB',
-    arte: ARTE_GRADIENTE,
-    corSuperior: 0xa29e95,
-    corInferior: 0x6f6c65,
-    rugosidade: 0.6,
-    etiqueta: {
-      largura: 0.078,
-      profundidade: 0.04,
-      deslocamentoX: 0,
-      deslocamentoZ: 0.01,
-    },
-    desgasteContatos: 0.45,
-  },
-  {
     id: 'preto-generico',
     nome: 'Cartucho genérico',
     descricao: 'Casca preta sem marca, etiqueta datilografada e encardida',
@@ -862,22 +624,6 @@ export const CARTRIDGE_MANIFEST: readonly CartridgeInfo[] = [
       alturaLevantada: 0.0019,
     },
     desgasteContatos: 1,
-  },
-  {
-    id: 'educativo-verde',
-    nome: 'Matemática I',
-    descricao: 'Software educativo, 16 KB — Editora Meridiano',
-    arte: ARTE_EDUCATIVO,
-    corSuperior: 0xc7c1b2,
-    corInferior: 0x8e8a80,
-    rugosidade: 0.58,
-    etiqueta: {
-      largura: 0.076,
-      profundidade: 0.042,
-      deslocamentoX: 0,
-      deslocamentoZ: 0.009,
-    },
-    desgasteContatos: 0.35,
   },
 ]
 
@@ -1210,6 +956,7 @@ function ribGeometry(): THREE.BufferGeometry {
 
 function buildRibs(material: THREE.Material): THREE.InstancedMesh {
   const mesh = new THREE.InstancedMesh(ribGeometry(), material, RIB_COUNT * 2)
+  owned.instances.push(mesh)
   mesh.name = 'cartucho-nervuras'
   const dummy = new THREE.Object3D()
   let i = 0
@@ -1295,6 +1042,7 @@ function contactGeometry(): THREE.BufferGeometry {
 function buildContacts(material: THREE.Material, wear: number): THREE.InstancedMesh {
   const count = CONTACT_COUNT * 2
   const mesh = new THREE.InstancedMesh(contactGeometry(), material, count)
+  owned.instances.push(mesh)
   mesh.name = 'cartucho-contatos'
   const dummy = new THREE.Object3D()
   const color = new THREE.Color()
@@ -1638,6 +1386,8 @@ class CartridgeSceneModule implements SceneModule {
   dispose(): void {
     this.#root?.clear()
     this.#root = null
+    for (const mesh of owned.instances) mesh.dispose()
+    owned.instances.length = 0
     for (const g of owned.geometries) g.dispose()
     for (const m of owned.materials) m.dispose()
     for (const t of owned.textures) t.dispose()

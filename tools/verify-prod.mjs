@@ -3,7 +3,8 @@
 //
 // Point it at your deploy with the first argument or MSX_PROD_URL:
 //   node tools/verify-prod.mjs https://my-deploy.example.workers.dev/
-import { chromium } from 'playwright'
+import { launchBrowser, WEBMSX_URL, WEBMSX_INTEGRITY } from './browser.mjs'
+import { checkDeploymentHeaders } from './deployment-headers.mjs'
 import { mkdir } from 'node:fs/promises'
 
 const TARGET = process.argv[2] ?? process.env.MSX_PROD_URL
@@ -21,7 +22,8 @@ if (!TARGET) {
 const EXPECTED_WEBMSX_STYLE_VIOLATION =
   /(?:Refused to apply inline style|Applying inline style violates).*(?:style-src-elem|style-src)/i
 
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=metal', '--enable-gpu'] })
+const browser = await launchBrowser()
+try {
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } })
 
 const errs = []
@@ -36,7 +38,10 @@ const classify = (text) => {
 page.on('pageerror', (e) => classify(String(e)))
 page.on('console', (m) => { if (m.type() === 'error') classify(m.text()) })
 
-const response = await page.goto(TARGET, { waitUntil: 'networkidle', timeout: 60_000 })
+const scenario = new URL(TARGET)
+scenario.searchParams.set('MACHINE', 'MSX2P')
+scenario.searchParams.set('SCREEN_ELEMENT_ID', 'app')
+const response = await page.goto(scenario.href, { waitUntil: 'networkidle', timeout: 60_000 })
 const headers = response?.headers() ?? {}
 
 const failures = []
@@ -45,18 +50,14 @@ const expect = (name, ok, detail) => {
   console.log(`${ok ? '✓' : '✗'} ${name}${detail ? ` — ${detail}` : ''}`)
 }
 
-const csp = headers['content-security-policy'] ?? ''
-const styleSrc = csp.split('style-src')[1]?.split(';')[0] ?? ''
-expect('CSP presente', csp.length > 0)
-expect("style-src sem 'unsafe-inline'", csp.length > 0 && !styleSrc.includes('unsafe-inline'), styleSrc.trim())
-expect("script-src sem 'unsafe-inline'", !(csp.split('script-src')[1]?.split(';')[0] ?? '').includes('unsafe-inline'))
-expect("object-src 'none'", csp.includes("object-src 'none'"))
-expect("frame-ancestors 'none'", csp.includes("frame-ancestors 'none'"))
-expect('HSTS', (headers['strict-transport-security'] ?? '').includes('max-age='))
-expect('X-Content-Type-Options: nosniff', headers['x-content-type-options'] === 'nosniff')
-expect('X-Frame-Options: DENY', (headers['x-frame-options'] ?? '').toUpperCase() === 'DENY')
+expect('HTTP 200', response?.status() === 200)
+for (const check of checkDeploymentHeaders(headers)) expect(check.name, check.pass, check.detail)
+if (process.env.MSX_EXPECTED_VERSION) {
+  const version = await page.locator('meta[name="application-version"]').getAttribute('content')
+  expect('versão publicada', version === process.env.MSX_EXPECTED_VERSION, version)
+}
 
-await page.waitForFunction(() => window.__msxReady === true, { timeout: 60_000 })
+await page.waitForFunction(() => window.__msxReady === true, null, { timeout: 60_000 })
 
 // Duas fases, porque a rota segue o cartucho (SPEC §9): slots vazios abrem o BASIC
 // interno e só a inserção promove para o WebMSX real. Conferir as duas prova mais do
@@ -82,7 +83,7 @@ const cspCountBeforeWebMsx = cspViolations.length
 
 await page.evaluate(() => window.__msx.interactions.insertCartridge('A'))
 await page
-  .waitForFunction(() => window.__msx.interactions.getState().emulator === 'webmsx', {
+  .waitForFunction(() => window.__msx.interactions.getState().emulator === 'webmsx', null, {
     timeout: 60_000,
   })
   .catch(() => {})
@@ -94,6 +95,17 @@ const out = await page.evaluate(() => {
 
 expect('cartucho promove para o WebMSX real sob a CSP', out.emulator === 'webmsx', `emulator = ${out.emulator}`)
 expect('cartucho inserido', out.slotA !== null, `slotA = ${out.slotA}`)
+const boundary = await page.evaluate(({ url, integrity }) => {
+  const script = [...document.scripts].find((item) => item.src === url)
+  return {
+    pinned: script?.integrity === integrity && script.crossOrigin === 'anonymous',
+    queryIgnored: window.WMSX?.MACHINE === 'MSX1A' &&
+      window.WMSX?.SCREEN_ELEMENT_ID === 'gradiente-wmsx-screen' &&
+      window.WMSX?.ALLOW_URL_PARAMETERS === false,
+  }
+}, { url: WEBMSX_URL, integrity: WEBMSX_INTEGRITY })
+expect('WebMSX usa URL e SRI fixados', boundary.pinned)
+expect('parâmetros da URL não sobrescrevem a configuração do WebMSX', boundary.queryIgnored)
 const webMsxViolations = cspViolations.slice(cspCountBeforeWebMsx)
 expect(
   'WebMSX gera somente as duas violações inline-style conhecidas',
@@ -111,12 +123,15 @@ await page.evaluate(() => window.__msx.cameraRig.resetPose(true))
 await page.waitForTimeout(1500)
 await mkdir('.scratch/verify-prod', { recursive: true })
 await page.screenshot({ path: '.scratch/verify-prod/deploy-live.png' })
-await browser.close()
 
 console.log(`\n${JSON.stringify(out)}`)
 console.log(`violações de CSP esperadas (WebMSX): ${webMsxViolations.length}`)
 if (failures.length > 0) {
   console.error(`\n${failures.length} verificação(ões) falharam:\n  ${failures.join('\n  ')}`)
-  process.exit(1)
+  process.exitCode = 1
+} else {
+  console.log('\nimplantação verificada.')
 }
-console.log('\nimplantação verificada.')
+} finally {
+  await browser.close()
+}

@@ -54,9 +54,13 @@ The product UI is intentionally Brazilian Portuguese.
 Requirements: Node 22 or newer and pnpm 11. Run Wrangler under Node, never Bun.
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
+pnpm setup:hooks  # enable the blocking ast-grep commit hook
+pnpm exec playwright install chromium
 pnpm dev          # http://localhost:5173
 pnpm verify       # ast-grep + TypeScript
+pnpm verify:all   # build + offline browser checks on an owned free port
+pnpm verify:online # real CDN emulator and game checks
 pnpm build        # production build in dist/
 pnpm deploy:staging # build + isolated staging Worker
 pnpm deploy       # build + production Worker
@@ -64,7 +68,8 @@ pnpm deploy       # build + production Worker
 
 ## Verification
 
-Start `pnpm dev`, then choose the tool that answers the question being tested:
+The managed verification commands start and stop their own server. For focused checks,
+start `pnpm dev`, then choose the tool that answers the question being tested:
 
 ```bash
 node tools/shoot.mjs --dpr 2           # 15 poses, p99 light gate, and DPR/buffer proof
@@ -79,6 +84,9 @@ node tools/verify-prod.mjs <url>       # headers, exact CSP behavior, emulator, 
 
 See [`AGENTS.md`](AGENTS.md) for the complete trigger table. Open visual captures and
 compare them with `reference/raw/`; a generated image that nobody inspected is not proof.
+For separate checkouts, use a distinct server port with `--strictPort` and set `MSX_URL`
+for the tools. Offline verification blocks the CDN deliberately; online verification
+requires actual emulator promotion and game behavior and fails if either is unavailable.
 
 ## Deploying your own
 
@@ -90,7 +98,8 @@ so a fork deploys to any static host (Cloudflare, Netlify, GitHub Pages, S3, ngi
   `pnpm deploy` publishes to whichever Cloudflare account your Wrangler is logged into.
 - **Staging:** `pnpm deploy:staging` targets the separate
   `msx-expert-xp800-staging` Worker; run `tools/verify-prod.mjs` against its URL before
-  tagging or promoting the build.
+  promoting the build. The HTML's `application-version` meta tag identifies the package
+  version; compare asset hashes before promoting the same candidate to production.
 - **Other hosts:** serve `dist/` with SPA fallback and replicate the security and cache
   headers from [`public/_headers`](public/_headers) (Cloudflare and Netlify read that
   file natively; elsewhere, port the CSP to your host's header mechanism).
@@ -108,8 +117,9 @@ src/
   textures/     Seeded procedural texture generators
 ```
 
-`Engine` composes modules through the contracts in `src/core/types.ts`. Modules never
-import each other; each owns and disposes its GPU resources. When every module and the
+`Engine` composes modules through the contracts in `src/core/types.ts`. Physical models
+own their GPU resources; interaction code coordinates their explicit APIs, and the HUD
+subscribes to one authoritative interaction state. When every module and the
 camera report that they are settled, `Engine` skips presentation until an interaction or
 explicit `requestRender()` invalidates the frame.
 

@@ -36,6 +36,23 @@ export class CaptureAbort extends Error {
   }
 }
 
+/** A missing required subject is a failed measurement, never a dark-screen exemption. */
+export function assertScreenEvidence(stats, { enabled, required, minCoverage, minMean, minP99 }) {
+  if (!enabled) return false
+  if (stats === null) throw new CaptureAbort('CRT screen geometry/ROI is missing')
+  if (![stats.coverage, stats.mean, stats.p99].every(Number.isFinite)) {
+    throw new CaptureAbort('CRT measurement is not finite', { stats })
+  }
+  if (required && stats.coverage < minCoverage) {
+    throw new CaptureAbort('required CRT screen is outside the frame or too small', { stats })
+  }
+  const gated = stats.coverage >= minCoverage
+  if (gated && (stats.mean < minMean || stats.p99 < minP99)) {
+    throw new CaptureAbort('screen ROI is dark', { stats })
+  }
+  return gated
+}
+
 /**
  * Fails the run if the page is not in a state worth photographing.
  *

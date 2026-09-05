@@ -25,7 +25,7 @@
  * The page contract is the same one `shoot.mjs` drives: `window.__msxReady`,
  * `window.__msxCamera(pose)`, `window.__msx.{engine,postFX,interactions}`.
  */
-import { chromium } from 'playwright'
+import { launchBrowser, targetUrl } from './browser.mjs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { cpus, loadavg } from 'node:os'
 import { resolve } from 'node:path'
@@ -59,7 +59,7 @@ const numberFlag = (name, fallback, { min = Number.MIN_VALUE, integer = false } 
   return value
 }
 
-const URL_ = flag('url', 'http://localhost:5173/')
+const URL_ = targetUrl()
 const WIDTH = numberFlag('width', '1920', { min: 1, integer: true })
 const HEIGHT = numberFlag('height', '1080', { min: 1, integer: true })
 const DPR = numberFlag('dpr', '1', { min: 0.1 })
@@ -83,17 +83,12 @@ const HOST_LOAD_AVERAGE_AT_START = loadavg()
 
 await mkdir(OUT_DIR, { recursive: true })
 
-const browser = await chromium.launch({
-  args: [
-    '--use-gl=angle',
-    '--use-angle=metal',
-    '--enable-gpu',
+const browser = await launchBrowser([
     '--ignore-gpu-blocklist',
     // Unthrottled rAF: without these every frame reads as ~16.7 ms regardless of cost.
     '--disable-frame-rate-limit',
     '--disable-gpu-vsync',
-  ],
-})
+])
 
 const page = await browser.newPage({
   viewport: { width: WIDTH, height: HEIGHT },
@@ -125,7 +120,7 @@ async function guard(fn) {
 console.log(`→ ${URL_}  (${WIDTH}×${HEIGHT} @ ${DPR}x, label: ${LABEL})`)
 await page.goto(URL_, { waitUntil: 'networkidle', timeout: 60_000 })
 await page
-  .waitForFunction(() => window.__msxReady === true, { timeout: 60_000 })
+  .waitForFunction(() => window.__msxReady === true, null, { timeout: 60_000 })
   .catch(() => undefined)
 await guard(() => assertPageHealthy(page, errors))
 

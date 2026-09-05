@@ -444,7 +444,6 @@ export class Joystick implements SceneModule {
   private appliedY = Number.NaN
 
   private readonly disposables: Array<{ dispose(): void }> = []
-  private readonly timers = new Set<number>()
   private disposed = false
   /** Para levantar `shadowMap.needsUpdate` nos quadros em que o manche se move. */
   private renderer: THREE.WebGLRenderer | null = null
@@ -476,31 +475,11 @@ export class Joystick implements SceneModule {
     }
   }
 
-  /** Deflexão alvo corrente. */
-  getDirection(): { x: number; y: number } {
-    return { x: this.targetX, y: this.targetY }
-  }
-
-  /** Deflexão realmente exibida (com atraso da mola) — útil para HUD/depuração. */
-  getVisualDirection(): { x: number; y: number } {
-    return { x: this.tiltX.value, y: this.tiltY.value }
-  }
-
   /** Pressiona/solta um botão de disparo. O curso é animado. */
   setButton(id: ButtonId, pressed: boolean): void {
     if (this.disposed) return
     const rig = this.buttons.get(id)
     if (rig) rig.pressed = pressed
-  }
-
-  isButtonPressed(id: ButtonId): boolean {
-    return this.buttons.get(id)?.pressed ?? false
-  }
-
-  /** Toque momentâneo para chamadas programáticas; o ponteiro usa `setButton()`. */
-  pressButton(id: ButtonId, holdMs = 110): void {
-    this.setButton(id, true)
-    this.later(() => this.setButton(id, false), holdMs)
   }
 
   /** Grupo raiz já construído, ou `null` antes do `build()`. */
@@ -582,8 +561,6 @@ export class Joystick implements SceneModule {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
-    for (const timer of this.timers) window.clearTimeout(timer)
-    this.timers.clear()
     for (const item of this.disposables) item.dispose()
     this.disposables.length = 0
     this.buttons.clear()
@@ -591,15 +568,6 @@ export class Joystick implements SceneModule {
     this.stickPivot = null
     this.gaiterGeometry = null
     this.gaiterRest = null
-  }
-
-  private later(callback: () => void, delayMs: number): void {
-    if (this.disposed) return
-    const timer = window.setTimeout(() => {
-      this.timers.delete(timer)
-      if (!this.disposed) callback()
-    }, delayMs)
-    this.timers.add(timer)
   }
 
   // ── Materiais derivados ────────────────────────────────────────────────────────
@@ -840,6 +808,7 @@ export class Joystick implements SceneModule {
     geometry.computeVertexNormals()
 
     const mesh = new THREE.InstancedMesh(geometry, mats.well, 2)
+    this.disposables.push(mesh)
     mesh.name = 'joystick-pocos'
     const matrix = new THREE.Matrix4()
     const xs = [-BUTTON_X, BUTTON_X]
@@ -916,6 +885,7 @@ export class Joystick implements SceneModule {
     geometry.computeVertexNormals()
 
     const mesh = new THREE.InstancedMesh(geometry, mats.cup, 4)
+    this.disposables.push(mesh)
     mesh.name = 'joystick-ventosas'
     const matrix = new THREE.Matrix4()
     const dx = BASE_W / 2 - 0.021

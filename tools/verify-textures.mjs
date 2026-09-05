@@ -15,21 +15,17 @@
  *   node tools/verify-textures.mjs --write         # regrava a linha de base (mudança deliberada)
  *   node tools/verify-textures.mjs --url http://localhost:5173
  */
-import { chromium } from 'playwright'
+import { launchBrowser, targetUrl } from './browser.mjs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const args = process.argv.slice(2)
-const flag = (name, fallback) => {
-  const i = args.indexOf(`--${name}`)
-  return i !== -1 && args[i + 1] ? args[i + 1] : fallback
-}
 const WRITE = args.includes('--write')
-const BASE_URL = flag('url', 'http://localhost:5173')
+const BASE_URL = targetUrl()
 const BASELINE = resolve(dirname(fileURLToPath(import.meta.url)), 'texture-baseline.json')
 
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=metal', '--enable-gpu'] })
+const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors = []
 page.on('pageerror', (error) => errors.push(String(error)))
@@ -38,7 +34,7 @@ page.on('console', (message) => {
 })
 
 try {
-  await page.goto(`${BASE_URL}/src/textures/__checks__.ts`, { waitUntil: 'domcontentloaded' })
+  await page.goto(new URL('/src/textures/__checks__.ts', BASE_URL).href, { waitUntil: 'domcontentloaded' })
   const result = await page.evaluate(async () => {
     const checks = await import('/src/textures/__checks__.ts')
     return checks.verifyProceduralTextures()

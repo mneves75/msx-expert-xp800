@@ -129,7 +129,7 @@ export interface PostFX {
    * `renderer.setSize`. Dimensions are CSS pixels; the composer allocates its targets at
    * the drawing-buffer size, so `renderer.setPixelRatio` is honoured automatically.
    */
-  resize(width: number, height: number): void
+  setSize(width: number, height: number): void
   /**
    * Switch the perf tier (SPEC §10). NÃO é grátis: mudar `multisampling` realoca o
    * buffer de entrada do composer (hitch de um quadro) — chamar por transição de
@@ -615,7 +615,7 @@ async function assemblePostFX(
     render(deltaTime?: number): void {
       composer.render(deltaTime)
     },
-    resize(width: number, height: number): void {
+    setSize(width: number, height: number): void {
       composer.setSize(width, height)
     },
     setQuality(next: PostFXQuality): void {

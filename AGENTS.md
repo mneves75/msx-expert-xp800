@@ -12,8 +12,9 @@ This is a Cloudflare-hosted Three.js reconstruction of the December 1985 Brazili
 **Gradiente Expert XP-800**, with WebMSX/C-BIOS on a period CRT. Quality and interaction
 reference: `https://ps1-pi.vercel.app/`. Acceptance is a blind side-by-side against
 `reference/raw/` (provenance and licenses in `reference/raw/CREDITS.md`; fetch the four
-git-ignored images locally). If an expert can identify the render, it is not done; the
-target is product photography, not "good for WebGL."
+git-ignored images locally). The visual target is product photography. Preserve measured
+appearance during maintenance; report known calibration gaps rather than claiming that
+functional checks prove photographic identity.
 
 ## Invariants
 
@@ -59,9 +60,47 @@ the function form), and strict TypeScript with `noUncheckedIndexedAccess` and
 `exactOptionalPropertyTypes`. No `any`; use `unknown` plus guards. Use pnpm only. Run
 Wrangler under Node, never Bun, which hangs after its first Cloudflare API call.
 
-`Engine` composes `SceneModule`s from `src/core/types.ts`. Modules import only shared
-contracts and `MaterialLibrary`, own their GPU resources, and release them in `dispose()`.
-`Engine` disposes them in reverse order and never deep-disposes their internals.
+`Engine` composes `SceneModule`s from `src/core/types.ts`. Physical models share contracts
+and `MaterialLibrary`; the interaction layer coordinates their explicit control APIs.
+Each module releases its owned GPU resources in `dispose()`, including InstancedMesh
+buffers. Shared cached textures belong to the cache. `Engine` disposes modules in reverse
+order and never deep-disposes their internals. The HUD consumes one typed interaction
+subscription; do not add a second state store or event-discovery path.
+
+## Setup and independent checkouts
+
+Use Node 22+ and the pnpm version in `packageManager`:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm setup:hooks                   # install the blocking ast-grep Git hook
+pnpm exec playwright install chromium
+pnpm dev                           # interactive Vite server on :5173
+pnpm verify:all                    # build and offline browser QA; owns its server
+pnpm verify:online                 # separate real CDN emulator/game integration checks
+```
+
+`pnpm verify:all` chooses a free port. For a manually started server use
+`pnpm dev --host 127.0.0.1 --port 5174 --strictPort`, and point tools at it with
+`MSX_URL=http://127.0.0.1:5174`. Each checkout needs its own node_modules and scratch
+outputs; share the pnpm store, never a running server. Create a worktree only when the
+user asks. Never terminate another checkout's listener to free your preferred port.
+
+## Agent workflow
+
+Establish the requested outcome, read its callers and choose the smallest supported
+change. Delete unused paths before adding abstractions. Batch independent reads, keep
+edits targeted, and delegate substantial independent work only with disjoint ownership.
+Preserve the objective, decisions and proof paths when context gets compacted.
+
+Run the matching checks below once; repeat affected checks after a change or failure.
+Do not invent a new test framework for a check that the browser harness already covers.
+Separate offline fallback proof from online integration proof: a skipped CDN check is
+not a pass. Finish with the result, evidence and actual limitations in concise prose.
+Model selection belongs to the agent runtime, not this repository. This workflow follows
+the [Fable 5.1 guidance](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1)
+and [GPT-6 Astra guidance](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra),
+checked 2026-09-05.
 
 ## Verification — pick the tool that matches the question
 
@@ -70,7 +109,7 @@ Source inspection cannot judge this project. Use the tool whose trigger matches:
 | You changed / suspect… | Run | It tells you |
 |---|---|---|
 | Anything visible | `node tools/shoot.mjs` (15 poses; `--pose x,y` for a subset) | Renders + a lit-subject gate that fails the batch if the CRT is dark when it shouldn't be |
-| Interaction logic, power, cartridges, HUD state | `node tools/verify-interactions2.mjs` | 24 functional PASS/FAIL checks against the live app (I4c needs the CDN — it exercises the real WebMSX promotion) |
+| Interaction logic, power, cartridges, HUD state | `node tools/verify-interactions2.mjs` | Live behavioral checks (online mode requires actual WebMSX promotion) |
 | Keyboard layout or key mapping | `node tools/verify-keymap.mjs` | Every modeled key vs both screen sources (incl. `Ç` and `NumpadEqual`) |
 | Exposure, lighting, or tone mapping | `node tools/tune-exposure.mjs` | Measured keycap RGB vs the spec target at several exposures |
 | The deployed site | `node tools/verify-prod.mjs [url]` | Asserts CSP/HSTS/nosniff/X-Frame-Options on the real response, then that the emulator loads under that CSP, the tube warms, and a cartridge inserts — exiting non-zero on any failure |
@@ -80,6 +119,12 @@ Source inspection cannot judge this project. Use the tool whose trigger matches:
 The dev server runs on :5173 (`pnpm dev`). The page exposes `window.__msxReady`,
 `window.__msxCamera(pose)`, and `window.__msx.{interactions,postFX,cameraRig,…}` — the
 capture harness depends on that contract; if you change camera or bootstrap code, keep it.
+
+`SceneModule.update()` returns `false` when settled. `Engine` then skips presentation
+once the camera and every module settle. External changes must call
+`window.__msx.engine.requestRender(2)`; changed shadow casters also set
+`renderer.shadowMap.needsUpdate = true`. Render-coupled work belongs in `beforeRender()`.
+Preserve these contracts, and measure active frame cost separately from idle work.
 
 After capturing, open the PNGs beside `reference/raw/`; an unseen change is not done. If
 a visual defect resists a material fix, A/B `window.__msx.postFX.effects` first. The
@@ -98,4 +143,16 @@ Keep keycaps instanced. These targets guide design but are not yet CI-enforced.
 Releases are tagged `v<semver>` and published as GitHub Releases. Staging uses
 `pnpm deploy:staging`; production uses `pnpm deploy`, both under Node. Before deploying,
 run `pnpm build`, the applicable verification above, and scan fresh `dist/` for secrets
-and local paths.
+and local paths. `MSX_EXPECTED_VERSION=<version> node tools/verify-prod.mjs <url>` checks
+the generated HTML's `application-version`; compare it and asset
+hashes with the candidate before promotion. Staging tags use `v<semver>-betaN`; production
+tags use `v<semver>`. Deploy only with user authorization.
+
+## Package management
+
+- **Use pnpm exclusively.** Never use `npm install`, `yarn`, or `bun install` — they ignore `pnpm-lock.yaml` and create duplicate physical copies of every dependency.
+- Setup / CI: `pnpm install --frozen-lockfile`
+- Add dependency: `pnpm add <pkg>` · dev: `pnpm add -D <pkg>` · workspace pkg: `pnpm --filter <name> add <pkg>`
+- Run scripts: `pnpm <script>`
+- `node_modules/` is disposable: hardlinked views into the shared pnpm store. Deleting it is always safe; reinstall is fast and offline. Never commit or edit it.
+- `pnpm-lock.yaml` is the source of truth: commit it, never hand-edit.

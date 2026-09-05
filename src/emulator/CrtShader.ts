@@ -36,19 +36,6 @@ export interface CrtTuning {
    * realmente tinha, simétrico em torno do centro geométrico.
    */
   curvature: number
-  /**
-   * @deprecated A máscara de sombra vive no material da tela
-   * (`CrtMonitor`/`SCREEN_PATCH`), onde existe `gl_FragCoord` e derivadas de
-   * tela. Aplicá-la aqui, num alvo com mipmap que é reduzido para a área do
-   * monitor, apagava a tríade por completo — era literalmente invisível.
-   */
-  mask: number
-  /** @deprecated Idem — o passo da tríade é físico e mora no material da tela. */
-  maskTriads: number
-  /** @deprecated O perfil do feixe também precisa de derivadas de tela. */
-  scanline: number
-  /** @deprecated Idem. */
-  scanlineDuty: number
   /** Persistência do fósforo verde, em segundos (constante de tempo). */
   persistence: number
   /** Sangramento de croma do composto NTSC, 0..1. */
@@ -82,10 +69,6 @@ export interface CrtTuning {
 
 export const DEFAULT_CRT_TUNING: Readonly<CrtTuning> = Object.freeze({
   curvature: 0.046,
-  mask: 0,
-  maskTriads: 0,
-  scanline: 0,
-  scanlineDuty: 0,
   persistence: 0.024,
   chroma: 0.55,
   dotCrawl: 0.35,
@@ -414,34 +397,10 @@ function normalizeTargetSize(width: number, height: number): { width: number; he
   }
 }
 
-/**
- * Reconhece um `WebGLRenderer` sem depender de `instanceof` — o objeto pode vir
- * de um `ModuleContext` montado por outra camada, e um teste estrutural é mais
- * robusto do que apostar numa única instância de three na página.
- */
-export function isWebGLRenderer(value: unknown): value is THREE.WebGLRenderer {
-  if (typeof value !== 'object' || value === null) return false
-  const candidate = value as { render?: unknown; setRenderTarget?: unknown; getRenderTarget?: unknown }
-  return (
-    typeof candidate.render === 'function' &&
-    typeof candidate.setRenderTarget === 'function' &&
-    typeof candidate.getRenderTarget === 'function'
-  )
-}
-
-/**
- * Rampa de aquecimento do tubo.
- *
- * Existe porque o `ScreenSource` pode ser dirigido por duas camadas diferentes:
- * a sequência de energia, que sabe o estado da chave e chama `setWarmup()`, ou
- * um consumidor que só liga e desliga a fonte. No segundo caso a rampa se
- * conduz sozinha a partir de `start()`/`stop()` — sem isso o tubo ficaria preto
- * para sempre, esperando um comando que nunca vem.
- */
+/** Rampa de aquecimento do tubo, dirigida pela energia do ScreenPipeline. */
 export class CrtWarmup {
   private value = 0
   private target = 0
-  private manual = false
 
   /** Constante de tempo da subida; a descida é bem mais rápida, como no vidro. */
   public constructor(
@@ -449,27 +408,15 @@ export class CrtWarmup {
     private readonly fallTau = 0.14,
   ) {}
 
-  public get current(): number {
-    return this.value
-  }
-
   public powerOn(): void {
-    if (!this.manual) this.target = 1
+    this.target = 1
   }
 
   public powerOff(): void {
-    if (!this.manual) this.target = 0
-  }
-
-  /** Dirige a rampa de fora. A partir daqui o automático sai de cena. */
-  public set(value: number): void {
-    this.manual = true
-    this.target = Math.min(1, Math.max(0, value))
-    this.value = this.target
+    this.target = 0
   }
 
   public update(dt: number): number {
-    if (this.manual) return this.value
     const tau = this.target > this.value ? this.riseTau : this.fallTau
     const k = 1 - Math.exp(-Math.max(dt, 0) / Math.max(tau, 1e-3))
     this.value += (this.target - this.value) * k
@@ -503,10 +450,6 @@ export class CrtProcessor {
     uFrame: { value: number }
     uWarmup: { value: number }
     uCurvature: { value: number }
-    uMask: { value: number }
-    uMaskTriads: { value: number }
-    uScanline: { value: number }
-    uScanlineDuty: { value: number }
     uChroma: { value: number }
     uDotCrawl: { value: number }
     uGunGamma: { value: number }
@@ -562,10 +505,6 @@ export class CrtProcessor {
       uFrame: { value: 0 },
       uWarmup: { value: 0 },
       uCurvature: { value: this.tuning.curvature },
-      uMask: { value: this.tuning.mask },
-      uMaskTriads: { value: this.tuning.maskTriads },
-      uScanline: { value: this.tuning.scanline },
-      uScanlineDuty: { value: this.tuning.scanlineDuty },
       uChroma: { value: this.tuning.chroma },
       uDotCrawl: { value: this.tuning.dotCrawl },
       uGunGamma: { value: this.tuning.gunGamma },
@@ -735,10 +674,6 @@ export class CrtProcessor {
   public setTuning(patch: Partial<CrtTuning>): void {
     Object.assign(this.tuning, patch)
     this.tubeUniforms.uCurvature.value = this.tuning.curvature
-    this.tubeUniforms.uMask.value = this.tuning.mask
-    this.tubeUniforms.uMaskTriads.value = this.tuning.maskTriads
-    this.tubeUniforms.uScanline.value = this.tuning.scanline
-    this.tubeUniforms.uScanlineDuty.value = this.tuning.scanlineDuty
     this.tubeUniforms.uChroma.value = this.tuning.chroma
     this.tubeUniforms.uDotCrawl.value = this.tuning.dotCrawl
     this.tubeUniforms.uGunGamma.value = this.tuning.gunGamma

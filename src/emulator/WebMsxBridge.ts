@@ -1,12 +1,6 @@
 import * as THREE from 'three'
 
 import type { ScreenSource } from '../core/types.ts'
-import {
-  CrtProcessor,
-  CrtWarmup,
-  isWebGLRenderer,
-  type CrtProcessorOptions,
-} from './CrtShader.ts'
 import { webMsxKeyForCode } from './Keymap.ts'
 import { buildSuperCosmicoRom } from './SuperCosmicoRom.ts'
 
@@ -32,7 +26,7 @@ import { buildSuperCosmicoRom } from './SuperCosmicoRom.ts'
  * O script é injetado sob demanda (só na energização, nunca no load da página —
  * são 1,5 MB), monta o WebMSX num contêiner fora de tela, e o `<canvas>` da tela
  * do emulador vira uma `THREE.CanvasTexture`. A partir daí o
- * {@link CrtProcessor} trata do vidro.
+ * `ScreenPipeline` trata do vidro.
  *
  * O WebMSX 6.0 desenha em contexto **2D** (`CanvasDisplay` usa `getContext('2d')`,
  * sem WebGL), então não há questão de `preserveDrawingBuffer` — mas *há* risco de
@@ -144,22 +138,8 @@ export interface WebMsxBridgeOptions {
    * ROM de terceiros acompanha o projeto.
    */
   readonly romProvider?: (romId: string) => Promise<Uint8Array | null>
-  /**
-   * Mantido apenas para preservar a forma pública anterior das opções.
-   * É ignorado: não existe mais nenhum cartucho automático no boot.
-   * @deprecated Cartuchos são gerenciados exclusivamente pelos slots físicos.
-   */
-  readonly autoDemoCartridge?: boolean
   /** Recebe avisos para a UI, em pt-BR. */
   readonly onNotice?: (message: string) => void
-  /**
-   * Renderer da cena. Passando um, esta ponte monta o próprio
-   * {@link CrtProcessor} e `texture` já sai processada pelo tubo — é o modo que
-   * serve a quem só sabe ligar um `ScreenSource` e ler `texture`. Sem renderer,
-   * `texture` é o canvas cru do emulador e o vidro fica por conta de quem compõe.
-   */
-  readonly renderer?: THREE.WebGLRenderer | undefined
-  readonly crt?: CrtProcessorOptions | undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -323,18 +303,11 @@ export class WebMsxBridge implements ScreenSource {
   private startController: AbortController | null = null
   private startPromise: Promise<void> | null = null
   private lateAutoStartTimer: number | null = null
-  private readonly renderer: THREE.WebGLRenderer | null
-  private readonly crt: CrtProcessor | null
-  private readonly warmup = new CrtWarmup()
   /** Tamanho do buffer do canvas, usado só para detectar troca de modo. */
   private canvasSize = { width: 544, height: 416 }
   /** Tamanho lógico do sinal — é o que o tubo precisa saber. */
   private logicalSize = { width: 272, height: 208 }
 
-  /**
-   * Aceita um `WebMsxBridgeOptions` ou, na prática, qualquer objeto que carregue
-   * um `renderer` — o `ModuleContext` da cena, por exemplo.
-   */
   public constructor(options: WebMsxBridgeOptions = {}) {
     this.options = options
     // Textura de espera: um preto levemente esverdeado, para o material da tela
@@ -344,25 +317,6 @@ export class WebMsxBridge implements ScreenSource {
     this.placeholder.colorSpace = THREE.SRGBColorSpace
     this.placeholder.needsUpdate = true
     this.placeholder.name = 'msx-tela-aguardando'
-
-    this.renderer = isWebGLRenderer(options.renderer) ? options.renderer : null
-    // O tubo nasce junto com a ponte, apontado para a textura de espera: assim
-    // `texture` tem identidade estável desde antes do boot e quem plugar cedo
-    // não precisa replugar depois.
-    this.crt =
-      this.renderer === null
-        ? null
-        : new CrtProcessor(this.placeholder, {
-            sourceWidth: 272,
-            sourceHeight: 208,
-            ...options.crt,
-          })
-  }
-
-  /** Rampa de aquecimento, quando dirigida de fora pela sequência de energia. */
-  public setWarmup(value: number): void {
-    this.warmup.set(value)
-    this.crt?.setWarmup(value)
   }
 
   /**
@@ -381,23 +335,9 @@ export class WebMsxBridge implements ScreenSource {
     return this.logicalSize.height
   }
 
-  /**
-   * Textura a amostrar. Com renderer, é a saída do tubo — identidade estável do
-   * início ao fim. Sem renderer, é o canvas cru do emulador (ou o preto de
-   * espera, enquanto o emulador não subiu).
-   */
+  /** Canvas cru do emulador, ou a textura de espera antes do boot. */
   public get texture(): THREE.Texture {
-    return this.crt?.texture ?? this.canvasTexture ?? this.placeholder
-  }
-
-  /** Canvas cru do emulador, antes do vidro. Útil para depuração. */
-  public get rawTexture(): THREE.Texture {
     return this.canvasTexture ?? this.placeholder
-  }
-
-  /** `true` depois de o emulador estar realmente desenhando. */
-  public get ready(): boolean {
-    return this.canvasTexture !== null
   }
 
   // -------------------------------------------------------------------------
@@ -413,7 +353,6 @@ export class WebMsxBridge implements ScreenSource {
     if (this.disposed) return Promise.reject(new Error('A ponte do WebMSX já foi descartada.'))
     if (signal?.aborted === true) return Promise.reject(abortError())
     if (this.powered && this.mounted) return Promise.resolve()
-    this.warmup.powerOn()
     this.powered = true
     if (this.mounted) {
       this.powerOnRoom()
@@ -478,7 +417,6 @@ export class WebMsxBridge implements ScreenSource {
       texture.wrapS = THREE.ClampToEdgeWrapping
       texture.wrapT = THREE.ClampToEdgeWrapping
       this.canvasTexture = texture
-      this.crt?.setSource(texture, this.logicalSize.width, this.logicalSize.height)
 
       this.mounted = true
     } catch (error) {
@@ -503,7 +441,6 @@ export class WebMsxBridge implements ScreenSource {
    * carregado duas vezes na mesma página.
    */
   public stop(): void {
-    this.warmup.powerOff()
     this.powered = false
     this.startController?.abort()
     this.clearPressedKeys()
@@ -623,7 +560,7 @@ export class WebMsxBridge implements ScreenSource {
    * acompanhamos mudança de resolução do sinal (o VDP troca de 256 para 512 de
    * largura conforme o modo).
    */
-  public update(dt: number): void {
+  public update(): void {
     const canvas = this.canvas
     const texture = this.canvasTexture
     if (canvas !== null && texture !== null) {
@@ -632,15 +569,9 @@ export class WebMsxBridge implements ScreenSource {
         // textura — o three relê as dimensões do canvas a cada envio, e trocar
         // quebraria a referência que o tubo já tem.
         this.measure(canvas)
-        this.crt?.setSource(texture, this.logicalSize.width, this.logicalSize.height)
       }
       texture.needsUpdate = true
     }
-    const crt = this.crt
-    const renderer = this.renderer
-    if (crt === null || renderer === null) return
-    crt.setWarmup(this.warmup.update(dt))
-    crt.render(renderer, dt)
   }
 
   public dispose(): void {
@@ -654,7 +585,6 @@ export class WebMsxBridge implements ScreenSource {
     this.mounted = false
     this.shutdownMachine()
     this.teardown()
-    this.crt?.dispose()
     this.canvasTexture?.dispose()
     this.canvasTexture = null
     this.placeholder.dispose()
@@ -730,6 +660,8 @@ export class WebMsxBridge implements ScreenSource {
       throw new WebMsxUnavailableError('api-ausente', 'O script carregou mas não expôs `WMSX`.')
     }
     Object.assign(wmsx, {
+      // The pinned Configurator otherwise lets page query parameters replace these settings.
+      ALLOW_URL_PARAMETERS: false,
       // MSX1 América (NTSC, 60 Hz) — é o que o Expert é.
       MACHINE: 'MSX1A',
       VDP_PALETTE: this.options.vdpPalette ?? 1,

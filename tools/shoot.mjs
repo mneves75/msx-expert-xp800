@@ -28,12 +28,13 @@
  * Start the dev server with `MSX_CAPTURE=1 pnpm dev` to suppress the HMR overlay so a
  * stale one can never composite into a frame — the error gates still stop the run.
  */
-import { chromium } from 'playwright'
+import { launchBrowser, targetUrl } from './browser.mjs'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import {
   CaptureAbort,
   assertPageHealthy,
+  assertScreenEvidence,
   gitSha,
   measureRegion,
   objectRoi,
@@ -65,7 +66,7 @@ const numberFlag = (name, fallback, { min = Number.MIN_VALUE, integer = false } 
 }
 
 const OUT = resolve(flag('out', 'shots'))
-const URL_ = flag('url', 'http://localhost:5173/')
+const URL_ = targetUrl()
 const WIDTH = numberFlag('width', '1920', { min: 1, integer: true })
 const HEIGHT = numberFlag('height', '1080', { min: 1, integer: true })
 const DPR = numberFlag('dpr', '1', { min: 0.1 })
@@ -127,23 +128,16 @@ const POSES = {
 
 const requested = flag('pose', '')
 const poseNames = requested ? requested.split(',').map((s) => s.trim()) : Object.keys(POSES)
-const unknownPoses = poseNames.filter((name) => !(name in POSES))
+const unknownPoses = poseNames.filter((name) => !Object.hasOwn(POSES, name))
 if (unknownPoses.length > 0) {
   console.error(`✗ unknown pose(s): ${unknownPoses.join(', ')}`)
   process.exit(2)
 }
 
 await mkdir(OUT, { recursive: true })
+await writeSidecar(OUT, { verdict: 'incomplete', capturedAt: new Date().toISOString() })
 
-const browser = await chromium.launch({
-  args: [
-    '--use-gl=angle',
-    '--use-angle=metal',
-    '--enable-gpu',
-    '--ignore-gpu-blocklist',
-    '--enable-unsafe-webgpu',
-  ],
-})
+const browser = await launchBrowser(['--ignore-gpu-blocklist'])
 
 const page = await browser.newPage({
   viewport: { width: WIDTH, height: HEIGHT },
@@ -172,7 +166,7 @@ async function guard(fn) {
         console.error(`  ${k}: ${Array.isArray(v) ? v.join('\n    ') : v}`)
       }
     }
-    console.error('  No frames were written. Fix the build and re-run.')
+    console.error('  Batch aborted. Any frames already written are incomplete.')
     await browser.close()
     process.exit(1)
   }
@@ -185,17 +179,18 @@ await page.goto(URL_, { waitUntil: 'networkidle', timeout: 60_000 })
 // A timeout here is not a warning: if the scene never built there is nothing to shoot,
 // and capturing "anyway" is exactly how a Vite error overlay got submitted for review.
 await page
-  .waitForFunction(() => window.__msxReady === true, { timeout: 60_000 })
+  .waitForFunction(() => window.__msxReady === true, null, { timeout: 60_000 })
   .catch(() => undefined)
 await guard(() => assertPageHealthy(page, errors))
 
 // Auto-rotate off (it would drift the azimuth between poses), HUD chrome per the flag,
 // power per the flag. Re-applied before every frame — see `stage()` for why.
 const staged = await stage(page, { powerOn: POWER_ON, showHud: SHOW_HUD })
-if (!staged.hudReachable) console.warn('⚠ HUD handle missing — chrome stays in frame')
-if (POWER_ON && !staged.powerReachable) {
-  console.warn('⚠ interaction layer missing — machine stays switched off')
-}
+await guard(() => {
+  if (!staged.hudReachable || !staged.powerReachable || staged.powerState !== POWER_ON) {
+    throw new CaptureAbort('HUD/power capture contract was not applied', staged)
+  }
+})
 
 if (HIDE) {
   const hiddenNames = await page.evaluate((names) => {
@@ -233,7 +228,7 @@ if (FOV > 0) {
     cam.updateProjectionMatrix()
     return true
   }, FOV)
-  if (!applied) console.warn('⚠ camera not reachable — FOV override ignored')
+  await guard(() => { if (!applied) throw new CaptureAbort('camera FOV override was not applied') })
 }
 
 // CRT warm-up is a deliberate ramp (SPEC §8) and the emulator is fetched lazily.
@@ -256,14 +251,19 @@ for (const name of poseNames) {
         : false,
     pose,
   )
-  if (!ok) console.warn('⚠ window.__msxCamera missing — pose not applied')
+  await guard(() => { if (!ok) throw new CaptureAbort('window.__msxCamera missing — pose not applied') })
 
   // Re-assert the stage. A dev-server recompile reloads the page and silently
   // undoes the power switch and the HUD hide; without this the batch comes out
   // with the machine off and the whole overlay in frame, and nothing says why.
   const frameStage = await stage(page, { powerOn: POWER_ON, showHud: SHOW_HUD })
-  if (POWER_ON && frameStage.powerState === false) {
-    await page.waitForTimeout(4000)
+  await guard(() => {
+    if (!frameStage.hudReachable || !frameStage.powerReachable || frameStage.powerState !== POWER_ON) {
+      throw new CaptureAbort('capture stage lost its HUD/power contract', frameStage)
+    }
+  })
+  if (POWER_ON && frameStage.warmth < 0.995) {
+    await page.waitForFunction(() => window.__msx.interactions.getState().power.warmth >= 0.995, null, { timeout: 10_000 })
   }
 
   // Let TAA/progressive effects converge before capturing.
@@ -281,14 +281,23 @@ for (const name of poseNames) {
   // aceso quando a câmera realmente enxerga a face do monitor.
   const azimuthDeg = ((pose[0] % 360) + 360) % 360
   const facingScreen = azimuthDeg <= 100 || azimuthDeg >= 260
-  const gated =
-    VERIFY && POWER_ON && facingScreen && stats !== null && stats.coverage >= SCREEN_MIN_COVERAGE
-  const lit = stats !== null && stats.mean >= SCREEN_MIN_MEAN && stats.p99 >= SCREEN_MIN_P99
-  if (gated && !lit) {
-    failures.push(
-      `${name}: screen ROI is dark — mean ${stats.mean.toFixed(1)} (min ${SCREEN_MIN_MEAN}), ` +
-        `p99 ${stats.p99} (min ${SCREEN_MIN_P99})`,
-    )
+  let gated = false
+  let lit = true
+  // The full-hardware front pose measures 2.99% inset phosphor at 1920×1080.
+  // Keep its wide framing; 2% still supplies over 40k pixels for the light test.
+  const minCoverage = name === 'front' ? 0.02 : SCREEN_MIN_COVERAGE
+  try {
+    gated = assertScreenEvidence(stats, {
+      enabled: VERIFY && POWER_ON && facingScreen && !HIDE.split(',').includes('monitor-crt'),
+      required: ['hero', 'front', 'screen', 'screen-macro'].includes(name),
+      minCoverage,
+      minMean: SCREEN_MIN_MEAN,
+      minP99: SCREEN_MIN_P99,
+    })
+  } catch (error) {
+    lit = false
+    gated = true
+    failures.push(`${name}: ${error.message}`)
   }
 
   shots.push({
@@ -296,6 +305,7 @@ for (const name of poseNames) {
     file: `${name}.png`,
     camera: { azimuth: pose[0], elevation: pose[1], distance: pose[2], target: pose[3] },
     screenRoi: roi,
+    minScreenCoverage: minCoverage,
     stage: frameStage,
     screenLuminance:
       stats === null
