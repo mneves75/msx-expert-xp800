@@ -1,7 +1,8 @@
 // SPEC §8 verification, corrected to the REAL InteractionsHandle API.
 import { launchBrowser, targetUrl, WEBMSX_URL } from './browser.mjs'
 const OFFLINE = process.argv.includes('--offline') || process.env.MSX_OFFLINE === '1'
-const browser = await launchBrowser()
+const SOFTWARE = process.env.MSX_SOFTWARE_RENDERER === '1'
+const browser = await launchBrowser(SOFTWARE ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : [])
 try {
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
 const errs = []
@@ -18,6 +19,20 @@ if (OFFLINE) await page.route(WEBMSX_URL, (route) => { blockedCdn += 1; return r
 console.log(`Mode: ${OFFLINE ? 'offline — CDN blocked; fallback required' : 'online — real CDN promotion required'}`)
 await page.goto(targetUrl(), { waitUntil: 'networkidle' })
 await page.waitForFunction(() => window.__msxReady === true, null, { timeout: 60_000 })
+// Functional CI keeps the real GPU pipeline and CSS viewport, at a smaller buffer.
+// Default-resolution visual/performance evidence belongs to shoot.mjs/profile.mjs.
+if (SOFTWARE) {
+  const graphics = await page.evaluate(() => {
+    const { engine } = window.__msx
+    engine.capPixelRatio(0.25)
+    const gl = engine.renderer.getContext()
+    const info = gl.getExtension('WEBGL_debug_renderer_info')
+    return { renderer: info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : 'unknown',
+      width: gl.drawingBufferWidth, height: gl.drawingBufferHeight, dpr: engine.renderer.getPixelRatio() }
+  })
+  if (!/swiftshader/i.test(graphics.renderer)) throw new Error('Requested SwiftShader renderer was not selected')
+  console.log(`Functional software graphics: ${JSON.stringify(graphics)}`)
+}
 
 const R = []
 const check = (id, name, pass, detail = '') => {
@@ -29,14 +44,23 @@ const out = await page.evaluate(async (offline) => {
   const itx = window.__msx.interactions
   const S = () => itx.getState()
   const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+  const until = async (predicate, label) => {
+    const deadline = performance.now() + 30_000
+    while (!predicate()) {
+      if (performance.now() > deadline) throw new Error(`Timed out: ${label}`)
+      await wait(50)
+    }
+  }
   const o = {}
 
   // Power ramp
-  itx.setPower(false); await wait(2500)
+  itx.setPower(false)
+  await until(() => S().power.warmth === 0, 'initial tube cooldown')
   o.offWarmth = S().power.warmth
-  itx.setPower(true); await wait(250)
+  itx.setPower(true)
+  await until(() => S().power.warmth > 0.02, 'warm-up begins')
   o.earlyWarmth = S().power.warmth
-  await wait(5000)
+  await until(() => S().power.warmth > 0.95 && S().emulator !== null, 'warm-up finishes')
   o.lateWarmth = S().power.warmth
   // Force the narrow boundary that the coarse 2% publication cadence used to miss.
   // TS-private fields are intentionally inspected elsewhere in this probe too.
@@ -61,8 +85,11 @@ const out = await page.evaluate(async (offline) => {
     }
   }
   try {
-    for (const code of typedCodes) { itx.tapKey(code); await wait(140) }
-    await wait(100)
+    for (const code of typedCodes) {
+      itx.tapKey(code)
+      await until(() => typedEvents.some(([key, down]) => key === code && !down),
+        `${code} tap completes`)
+    }
   } finally {
     if (typedScreen && typeof originalTypedSendKey === 'function') {
       typedScreen.sendKey = originalTypedSendKey
@@ -96,12 +123,14 @@ const out = await page.evaluate(async (offline) => {
     document.body.append(textEntry)
     document.body.dispatchEvent(down)
     textEntry.dispatchEvent(repeat)
-    await wait(80)
+    await until(() => physicalEvents.some(([code, down]) => code === 'Space' && down),
+      'Space contact closes')
     textEntry.dispatchEvent(new KeyboardEvent('keyup', {
       code: 'Space', key: ' ', bubbles: true, cancelable: true,
     }))
     textEntry.remove()
-    await wait(180)
+    await until(() => physicalEvents.some(([code, down]) => code === 'Space' && !down),
+      'Space contact opens')
     document.body.dispatchEvent(new KeyboardEvent('keydown', {
       code: 'KeyA', key: 'a', ctrlKey: true, bubbles: true, cancelable: true,
     }))
@@ -189,17 +218,18 @@ const out = await page.evaluate(async (offline) => {
 
   // Cartridge A insert/eject with state reflection
   const before = S().slotA
-  itx.insertCartridge('A'); await wait(1800)
+  itx.insertCartridge('A')
+  await until(() => itx.slots.get('A').phase === 'inserido', 'cartridge physically seated')
   o.slotAAfterInsert = S().slotA?.name ?? null
-  if (!offline) {
-    for (let i = 0; i < 150 && S().emulator !== 'webmsx'; i++) await wait(200)
-  }
+  await until(() => offline ? itx.screen.fallbackReason !== null : S().emulator === 'webmsx',
+    offline ? 'blocked CDN activates fallback' : 'real WebMSX promotion')
   o.promoted = S().emulator === 'webmsx'
   o.fallbackWithCartridge = S().emulator === 'procedural' && S().slotA !== null
-  itx.ejectCartridge('A'); await wait(1600)
+  itx.ejectCartridge('A')
+  await until(() => itx.slots.get('A').phase === 'vazio' && S().emulator === 'procedural',
+    'cartridge ejected and BASIC restored')
   o.slotAAfterEject = S().slotA?.name ?? null
   o.slotABefore = before?.name ?? null
-  for (let i = 0; i < 50 && S().emulator !== 'procedural'; i++) await wait(200)
   o.emulatorAfterEject = S().emulator
   // Privados de TS são visíveis em runtime: é a fresta pela qual a sonda enxerga
   // o estado interno da ProceduralScreen sem ampliar a API pública.
@@ -235,9 +265,11 @@ const out = await page.evaluate(async (offline) => {
   o.resetView = JSON.stringify(camera.getPose()) === JSON.stringify(initialPose)
 
   // Power off ramp
-  itx.setPower(false); await wait(300)
+  const beforeOff = S().power.warmth
+  itx.setPower(false)
+  await until(() => S().power.warmth < beforeOff, 'cooldown begins')
   o.midOff = S().power.warmth
-  await wait(2600)
+  await until(() => S().power.warmth === 0, 'cooldown finishes')
   o.finalOff = S().power.warmth
 
   return o
@@ -327,13 +359,28 @@ check('I12', 'cartucho já usado é recusado sem inventar ocupação no HUD',
   rejectedHud.slotA === 'arcade-vermelho' && rejectedHud.slotB === null &&
   rejectedHud.hudSlotB === null && rejectedHud.readout === 'Sem cartucho', JSON.stringify(rejectedHud))
 check('I12a', 'cada publicação redesenha o HUD uma única vez', rejectedHud.publications > 0 && rejectedHud.renders === rejectedHud.publications)
+await page.evaluate(() => window.__msx.cameraRig.setAutoRotate(false))
+await page.waitForFunction(() => {
+  const { engine, cameraRig, interactions } = window.__msx
+  return interactions.getState().power.warmth === 0 && cameraRig.isSettled &&
+    interactions.slots.get('A').phase === 'inserido' && engine.framesRequested === 0 &&
+    [...interactions.slots.values()].every((slot) => !slot.insertion.moving &&
+      !slot.flap.moving && slot.approach.isSettled(1e-4))
+}, null, { timeout: 30_000 })
 const idleFrames = await page.evaluate(async () => {
-  const { engine, cameraRig } = window.__msx
-  cameraRig.setAutoRotate(false)
-  await new Promise((resolve) => setTimeout(resolve, 8000))
-  const before = engine.renderer.info.render.frame
-  await new Promise((resolve) => setTimeout(resolve, 1000))
-  return engine.renderer.info.render.frame - before
+  const { engine } = window.__msx
+  const deadline = performance.now() + 30_000
+  let before = engine.renderer.info.render.frame
+  while (performance.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    const after = engine.renderer.info.render.frame
+    if (after === before) {
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      return engine.renderer.info.render.frame - after
+    }
+    before = after
+  }
+  throw new Error('Powered-off scene did not settle within 30 seconds')
 })
 check('I12b', 'cartucho assentado com energia desligada deixa o render descansar', idleFrames === 0, `submissões=${idleFrames}`)
 await page.getByRole('button', { name: 'Ejetar o cartucho do slot A', exact: true }).click()
@@ -358,14 +405,24 @@ const travelResult = (before, during, after) => {
   return deltas.some((dy) => dy < -0.001) && deltas.every((dy) => dy < 0.00001) &&
     after.every((y, i) => Math.abs(y - before[i]) < 0.00001)
 }
+const waitForKeyHeights = async (before, pressed) => {
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    const heights = await keyHeights()
+    if (before.length && heights.length === before.length && (pressed
+      ? heights.some((y, i) => y - before[i] < -0.001)
+      : heights.every((y, i) => Math.abs(y - before[i]) < 0.00001))) return heights
+    await page.waitForTimeout(50)
+  }
+  throw new Error(`Key geometry did not ${pressed ? 'depress' : 'return to its seat'}`)
+}
 for (const code of ['KeyG', 'Space', 'Enter', 'ArrowUp', 'ArrowLeft', 'F1', 'Numpad7', 'NumpadEqual', 'ShiftLeft', 'Escape', 'ControlLeft', 'CapsLock']) {
   const before = await keyHeights()
   await page.evaluate((key) => window.__msx.interactions.pressKey(key), code)
-  await page.waitForTimeout(350)
-  const during = await keyHeights()
+  const during = await waitForKeyHeights(before, true)
   await page.evaluate((key) => window.__msx.interactions.releaseKey(key), code)
-  await page.waitForTimeout(650)
-  check(`I13:${code}`, 'capa afunda e retorna ao assento', travelResult(before, during, await keyHeights()))
+  const after = await waitForKeyHeights(before, false)
+  check(`I13:${code}`, 'capa afunda e retorna ao assento', travelResult(before, during, after))
 }
 
 // Positive pointer proof: project the real G proxy, then drive actual mouse events.
@@ -373,7 +430,7 @@ await page.evaluate(() => {
   window.__msx.hud.setChromeVisible(false)
   window.__msxCamera({ azimuth: 10, elevation: 42, distance: 0.24, target: [-0.02, 0.01, 0.25] })
 })
-await page.waitForTimeout(300)
+await page.waitForFunction(() => window.__msx.cameraRig.isSettled, null, { timeout: 15_000 })
 const keyPoint = await page.evaluate(() => {
   const { scene, engine, three } = window.__msx
   let key = null
@@ -385,12 +442,11 @@ const keyPoint = await page.evaluate(() => {
 const pointerBefore = await keyHeights()
 await page.mouse.move(keyPoint.x, keyPoint.y)
 await page.mouse.down()
-await page.waitForTimeout(350)
+const pointerDuring = await waitForKeyHeights(pointerBefore, true)
 const pickedKey = await page.evaluate(() => window.__msx.interactions.picker.activeHit?.keyCode)
-const pointerDuring = await keyHeights()
 await page.mouse.up()
-await page.waitForTimeout(650)
-check('I14', 'ponteiro real pressiona G e solta sua capa', pickedKey === 'KeyG' && travelResult(pointerBefore, pointerDuring, await keyHeights()))
+const pointerAfter = await waitForKeyHeights(pointerBefore, false)
+check('I14', 'ponteiro real pressiona G e solta sua capa', pickedKey === 'KeyG' && travelResult(pointerBefore, pointerDuring, pointerAfter))
 await page.evaluate(() => { window.__msx.cameraRig.resetPose(true); window.__msx.hud.setChromeVisible(true) })
 
 // O painel mobile precisa continuar fechável depois de rolar: o cabeçalho fica visível,
@@ -404,8 +460,15 @@ const mobilePage = await browser.newPage({
 collectErrors(mobilePage)
 await mobilePage.goto(targetUrl(), { waitUntil: 'networkidle' })
 await mobilePage.waitForFunction(() => window.__msxReady === true, null, { timeout: 60_000 })
+if (SOFTWARE) await mobilePage.evaluate(() => window.__msx.engine.capPixelRatio(0.25))
 await mobilePage.click('.hud__sheet-toggle')
-await mobilePage.waitForTimeout(400)
+await mobilePage.waitForFunction(() => {
+  const panel = document.querySelector('.hud__console')
+  if (!(panel instanceof HTMLElement)) return false
+  const rect = panel.getBoundingClientRect()
+  return rect.top >= 0 && rect.bottom <= innerHeight + 1 &&
+    panel.getAnimations().every((animation) => animation.playState === 'finished')
+}, null, { timeout: 15_000 })
 const mobileSheet = await mobilePage.evaluate(() => {
   const panel = document.querySelector('.hud__console')
   const close = document.querySelector('.hud__sheet-close')

@@ -71,6 +71,10 @@ pnpm deploy       # build + production Worker
 The managed verification commands start and stop their own server. For focused checks,
 start `pnpm dev`, then choose the tool that answers the question being tested:
 
+`MSX_SOFTWARE_RENDERER=1 pnpm verify:all` reproduces CI's SwiftShader functional checks
+at reduced drawing-buffer resolution. Visual captures and profiles retain their own
+explicit resolution settings.
+
 ```bash
 node tools/shoot.mjs --dpr 2           # 15 poses, p99 light gate, and DPR/buffer proof
 node tools/verify-interactions2.mjs   # hardware, input ownership, cancellation, render health

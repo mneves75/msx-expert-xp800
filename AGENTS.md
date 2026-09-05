@@ -86,6 +86,12 @@ pnpm verify:online                 # separate real CDN emulator/game integration
 outputs; share the pnpm store, never a running server. Create a worktree only when the
 user asks. Never terminate another checkout's listener to free your preferred port.
 
+CI runs `MSX_SOFTWARE_RENDERER=1 pnpm verify:all` to reproduce SwiftShader locally.
+Functional interaction checks retain both CSS viewports and the real rendering pipeline,
+but cap the drawing-buffer DPR at 0.25 and wait for actual animation/contact states.
+This mode is not evidence of default-resolution visual quality or frame cost; use the
+capture and profiling commands below for those questions.
+
 ## Agent workflow
 
 Establish the requested outcome, read its callers and choose the smallest supported

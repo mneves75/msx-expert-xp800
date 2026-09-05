@@ -40,6 +40,8 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Build and offline verification
+        env:
+          MSX_SOFTWARE_RENDERER: '1'
         run: pnpm verify:all
 
       - name: Built-artifact leakage scan

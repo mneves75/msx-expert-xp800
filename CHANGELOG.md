@@ -17,7 +17,7 @@ Notable changes are documented here. The format follows [Keep a Changelog](https
 
 ### Changed
 
-- Added portable managed offline/online browser verification, behavioral input and state assertions, failing-control tests for capture/security guards, and an offline browser CI gate.
+- Added portable managed offline/online browser verification, observed animation and input assertions, failing-control tests for capture/security guards, and a reproducible SwiftShader CI gate.
 - Consolidated agent instructions in AGENTS.md, documented isolated checkout setup, and embedded the package version in deployed HTML.
 
 ### Security
