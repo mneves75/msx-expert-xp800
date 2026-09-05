@@ -6,9 +6,9 @@ Curated project decisions and measurements. Read this with the newest
 
 ## Current deployment
 
-Version **0.2.0** is deployed to production. Staging tag `v0.2.0-beta10` and
-production tag `v0.2.0` identify the same verified application commit,
-`17368b11778c86e3f81972dba74b56466180dd01`. Linux CI and both live deployments passed;
+Version **0.2.1** is deployed to production. Staging tag `v0.2.1-beta1` and
+production tag `v0.2.1` identify the same verified application commit,
+`e674bda0d20603f2b13fdf028d3c2145016d549a`. Linux CI and both live deployments passed;
 all nine public files match the final build byte for byte. Release evidence and the
 completed plan are linked from `memory/2026-09-05.md`.
 
