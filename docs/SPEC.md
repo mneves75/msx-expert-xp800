@@ -215,8 +215,10 @@ TMS9918 palette (the authentic 15 colors + transparent) must be exact.
 
 Studio void, like the reference site. Not a lit room — a photographic set.
 
-- **HDRI-based IBL** as the base, low intensity, neutral.
-- **Key light** — large soft area light, upper front-left, ~4500 K.
+- **Procedural IBL** — low intensity, neutral; no downloaded HDRI.
+- **Key light** — 0.8 × 0.4 m soft area light, 4500 K, intensity 10.6,
+  at (−0.15, 0.40, 0.55) m, aimed at the keyboard at (0, 0.03, 0.265) m.
+  A co-directional shadow light at intensity 1.0 supplies the cast shadow.
 - **Fill** — dim, opposite side, cooler, ~6000 K.
 - **Rim/kicker** — hard, behind and above, separating the graphite from the dark void.
   This is what makes the silhouette read.
@@ -225,15 +227,27 @@ Studio void, like the reference site. Not a lit room — a photographic set.
 - **Contact shadows** — high-quality soft shadows, plus screen-space AO in the seams,
   vents, and under the shell overhang.
 
-Tone mapping: **AgX**, exposure **0.72**. Physically-correct lights,
-`useLegacyLights = false`. Color management on, output sRGB.
+Tone mapping: **AgX**, exposure **0.72**. Physical lighting, color management on,
+output sRGB.
 
-*Exposure 0.72 remains the global calibration, not an isolated keycap correction.
-`tools/tune-exposure.mjs` originally measured QWERTY at rgb(184,181,175) against
-`#B8B5AC` = rgb(184,181,172); after later lighting changes the current readings are
-rgb(172,169,162) at 0.72 and rgb(184,181,175) at 1.0. Because 1.0 overexposes the wider
-set, fix the measured lighting distribution before changing exposure, then re-run both
-`tune-case.mjs` and the ROI sweep.*
+*Recalibrated 2026-09-05 with clean surface samples. The former console/keyboard
+reference ratio included the white Gradiente logo; the old keycap crop included dark
+gaps and bevels. Neither supported the inferred illumination deficit. In
+`CF3000_and_XP800.jpg`, console ROI [1550,420,550,210] divided by clean keyboard-shell
+ROIs [1600,960,140,20] and [1740,965,180,15] gives observed RGB ratio ranges
+0.497–0.582 / 0.394–0.467 / 0.358–0.434. The old rig measured
+0.655 / 0.569 / 0.528 with the clean render ROIs in `tools/tune-case.mjs`.
+Moving the key closer to the keyboard and reducing the constant directional contribution
+corrects that contrast while preserving material colors and exposure.*
+
+These ratios describe displayed appearance at the recorded poses, not illumination or
+albedo: AgX, camera response, flash, and local reflections do not cancel in an RGB ratio.
+The keycap hex values in §3.2 are material inputs, not required output pixels.
+`tools/tune-exposure.mjs` reports clean J/K/L faces and shell contrast separately from
+the historical mixed crop. Both tools keep the CRT off to exclude changing screen spill
+and save their screenshots and measurements
+under `.scratch/calibration/`; inspect those surfaces and the full pose batch before
+changing the rig, exposure, or calibrated materials.
 
 ## 7. Post-processing chain
 

@@ -97,10 +97,12 @@ shadow atlas is frozen between real changes.
 - **Measure graphics in the real frame loop.** Sequential `gl.finish()` tests produced
   physically impossible pass costs under ANGLE/Metal. Use interleaved A/B rounds with
   rAF and disabled vsync; compare full-page readiness as well as isolated work.
-- **Two visual anchors currently fail their own tests.** The console-top/keyboard-shell
-  ratio is 0.85/0.74/0.69 in the render versus 0.36/0.28/0.25 in the photograph, and
-  exposure 0.72 measures keycaps at rgb(172,169,162), not rgb(184,181,175). Treat these as
-  open lighting-calibration defects, not reasons to rewrite the documented targets.
+- **Inspect what a color sample actually contains.** One reference crop crossed the
+  white logo; another mixed key faces with dark gaps. They exaggerated the console
+  contrast defect and incorrectly suggested dim keys. Clean samples supported a closer
+  softbox and a weaker directional light, with exposure and material colors unchanged.
+  The tools now save the sampled images. A ratio between processed pixels describes
+  visible contrast; it cannot reveal the physical illumination by itself.
 - **Tiny transmissive meshes can tax the whole scene.** Two indicator lenses enabled a
   renderer-wide transmission prepass. Removing transmission from those millimetric parts,
   then scheduling reflection/CRT work by elapsed time, reduced the 1080p scene from 258

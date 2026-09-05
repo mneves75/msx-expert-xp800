@@ -2,19 +2,15 @@
 /**
  * Calibração do casco do console contra a fotografia de referência.
  *
- * `tune-exposure.mjs` ancora as CAPAS na SPEC §3.2. Esta ferramenta ancora o CASCO, que é
+ * `tune-exposure.mjs` mede as CAPAS. Esta ferramenta mede o CASCO, que é
  * a leitura de assinatura do objeto: na foto (`reference/raw/CF3000_and_XP800.jpg`) o
  * tampo do Expert é um grafite escuro e quente; num render lavado ele vira bege e o
  * objeto deixa de ser reconhecível — que é exatamente o teste de aceitação da SPEC §11.
  *
- * O que é medido é uma **razão**, não um valor absoluto: tampo do console dividido pelo
- * casco do teclado, dentro da mesma imagem. Razão cancela a exposição, o perfil da foto e
- * a intensidade do estúdio; é a única comparação honesta entre uma fotografia de 2007 com
- * flash e um render tonemapeado com AgX.
- *
- * Alvo medido na fotografia (ROI do tampo ÷ ROI do casco do teclado, mesma imagem):
- *
- *     R 0.362   G 0.279   B 0.253      → escuro, e QUENTE (R > G > B)
+ * Compara RGB exibido: tampo do console dividido pelo casco superior do teclado.
+ * Razões em sRGB não cancelam universalmente exposição, tone mapping ou luz local;
+ * a faixa observada é referência de aparência, não medida de albedo/iluminação.
+ * A antiga amostra fotográfica [1400,960,90,30] incluía o logotipo branco.
  *
  * Uso:
  *   node tools/tune-case.mjs                       # mede o estado atual
@@ -22,6 +18,7 @@
  *   node tools/tune-case.mjs --env 0.2,0.4,0.6     # varre envMapIntensity do casco
  */
 import { launchBrowser, targetUrl } from './browser.mjs'
+import { mkdir, writeFile } from 'node:fs/promises'
 
 const args = process.argv.slice(2)
 const flag = (name, fallback) => {
@@ -37,26 +34,34 @@ const URL_ = targetUrl()
 const SWEEP = list('sweep')
 const ENV_SWEEP = list('env')
 
-/** Alvo medido na fotografia de referência. Ver cabeçalho. */
-const TARGET = { r: 0.362, g: 0.279, b: 0.253 }
+/** Retângulos [x,y,w,h] no JPEG original de 2592×1944, sem redimensionamento. */
+const REFERENCE = {
+  image: 'reference/raw/CF3000_and_XP800.jpg',
+  console: { roi: [1550, 420, 550, 210], rgb: [46.17966, 36.52072, 33.03345] },
+  shell: [
+    { roi: [1600, 960, 140, 20], rgb: [92.94893, 92.78857, 92.31893] },
+    { roi: [1740, 965, 180, 15], rgb: [79.33741, 78.17704, 76.16037] },
+  ],
+  ratioRange: { min: [0.497, 0.394, 0.358], max: [0.582, 0.467, 0.434] },
+}
+const OUTPUT = '.scratch/calibration'
+const measurements = []
 
 /** A pose `top` de `shoot.mjs`, literal — o tampo e o teclado no mesmo quadro. */
 const POSE = { azimuth: 25, elevation: 78, distance: 1.35, target: [0, 0.02, 0.08] }
 
 /**
- * ROIs em fração do quadro. A do console cobre o miolo do tampo (longe das quinas, onde
- * o filete de 2 mm e o realce especular mentem); a do teclado cobre o casco prateado à
- * esquerda do campo de teclas.
+ * Pixels no quadro fixo de 1920×1080. Superfícies sem legendas, teclas ou quinas.
+ * A antiga ROI do teclado [595,573,115,13] cruzava o recesso e as teclas de função.
  */
 const ROI = {
-  console: [0.42, 0.1, 0.16, 0.18],
-  teclado: [0.31, 0.531, 0.06, 0.012],
+  console: [850, 140, 220, 120],
+  teclado: [795, 638, 25, 10],
 }
 
 const browser = await launchBrowser(['--ignore-gpu-blocklist', '--hide-scrollbars'])
-const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 })
+let page
 const errors = []
-page.on('pageerror', (error) => errors.push(String(error)))
 
 /**
  * Lê o RGB médio de cada ROI.
@@ -65,9 +70,10 @@ page.on('pageerror', (error) => errors.push(String(error)))
  * `preserveDrawingBuffer: false`, então copiar o canvas depois do quadro composto devolve
  * preto — o que esta ferramenta mediu na primeira versão.
  */
-async function measure() {
-  const shot = (await page.screenshot({ type: 'png' })).toString('base64')
-  return page.evaluate(async ({ roi, shot }) => {
+async function measure(label) {
+  const screenshot = `${OUTPUT}/tune-case-${label}.png`
+  const shot = (await page.screenshot({ type: 'png', path: screenshot })).toString('base64')
+  const rgb = await page.evaluate(async ({ roi, shot }) => {
     const img = new Image()
     img.src = `data:image/png;base64,${shot}`
     await img.decode()
@@ -75,12 +81,9 @@ async function measure() {
     c.width = img.naturalWidth
     c.height = img.naturalHeight
     const ctx = c.getContext('2d')
+    if (!ctx) throw new Error('Canvas 2D indisponível')
     ctx.drawImage(img, 0, 0)
-    const read = ([fx, fy, fw, fh]) => {
-      const x = Math.round(fx * c.width)
-      const y = Math.round(fy * c.height)
-      const w = Math.max(1, Math.round(fw * c.width))
-      const h = Math.max(1, Math.round(fh * c.height))
+    const read = ([x, y, w, h]) => {
       const d = ctx.getImageData(x, y, w, h).data
       let r = 0, g = 0, b = 0
       const n = d.length / 4
@@ -89,6 +92,9 @@ async function measure() {
     }
     return { console: read(roi.console), teclado: read(roi.teclado) }
   }, { roi: ROI, shot })
+  const ratio = rgb.console.map((channel, i) => channel / rgb.teclado[i])
+  measurements.push({ label, screenshot, rgb, ratio })
+  return rgb
 }
 
 /** Aplica um multiplicador ao albedo do casco e/ou uma nova intensidade de env. */
@@ -125,32 +131,35 @@ const report = (label, m) => {
   const r = m.console[0] / m.teclado[0]
   const g = m.console[1] / m.teclado[1]
   const b = m.console[2] / m.teclado[2]
-  const dist = Math.hypot(r - TARGET.r, g - TARGET.g, b - TARGET.b)
   const warm = m.console[0] > m.console[2]
   console.log(
-    `${label.padEnd(22)} razão R${fmt(r)} G${fmt(g)} B${fmt(b)}   Δalvo ${dist.toFixed(3)}   ${warm ? 'quente ✓' : 'frio ✗'}   console rgb(${m.console.map((v) => Math.round(v)).join(',')})`
+    `${label.padEnd(22)} razão R${fmt(r)} G${fmt(g)} B${fmt(b)}   ${warm ? 'R > B' : 'R ≤ B'}   console rgb(${m.console.map((v) => Math.round(v)).join(',')})   teclado rgb(${m.teclado.map((v) => Math.round(v)).join(',')})`
   )
-  return dist
 }
 
 try {
+  await mkdir(OUTPUT, { recursive: true })
+  page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 })
+  page.on('pageerror', (error) => errors.push(String(error)))
   await page.goto(URL_, { waitUntil: 'load' })
   await page.waitForFunction(() => window.__msxReady === true, null, { timeout: 60000 })
-  await page.evaluate((pose) => window.__msxCamera(pose), POSE)
-  await page.evaluate(() => {
-    window.__msx.hud?.setChromeVisible?.(false)
+  await page.evaluate((pose) => {
+    window.__msx.cameraRig.setAutoRotate(false)
+    window.__msxHud.setChromeVisible(false)
+    window.__msx.interactions.setPower(false)
+    window.__msxCamera(pose)
     window.__msx.engine.requestRender(3)
-  })
-  await page.waitForTimeout(600)
+  }, POSE)
+  await page.waitForTimeout(5500)
 
-  console.log(`\nalvo da fotografia:    razão R${fmt(TARGET.r)} G${fmt(TARGET.g)} B${fmt(TARGET.b)}   (escuro e quente)\n`)
-  report('estado atual', await measure())
+  console.log('\nFaixa observada na foto: R 0.497–0.582 G 0.394–0.467 B 0.358–0.434 (aparência sRGB; não é um alvo físico).\n')
+  report('estado atual', await measure('current'))
 
   if (SWEEP.length > 0) {
     console.log('\nvarredura de albedo (multiplicador sobre a cor atual do material):')
     for (const scale of SWEEP) {
       await apply(scale, undefined)
-      report(`albedo ×${scale}`, await measure())
+      report(`albedo ×${scale}`, await measure(`albedo-${scale}`))
     }
     await apply(1, undefined)
   }
@@ -159,9 +168,15 @@ try {
     console.log('\nvarredura de envMapIntensity:')
     for (const env of ENV_SWEEP) {
       await apply(undefined, env)
-      report(`env ${env}`, await measure())
+      report(`env ${env}`, await measure(`env-${env}`))
     }
   }
+
+  await writeFile(`${OUTPUT}/tune-case.json`, JSON.stringify({
+    url: URL_, pose: POSE, power: 'off', viewport: [1920, 1080], roi: ROI, reference: REFERENCE,
+    method: 'Displayed sRGB ratios; exposure, tone mapping and local illumination are not cancelled.',
+    measurements, errors,
+  }, null, 2))
 
   if (errors.length > 0) {
     console.error(`\nErros no console: ${[...new Set(errors)].join(' | ')}`)

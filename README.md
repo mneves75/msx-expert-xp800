@@ -79,7 +79,8 @@ explicit resolution settings.
 node tools/shoot.mjs --dpr 2           # 15 poses, p99 light gate, and DPR/buffer proof
 node tools/verify-interactions2.mjs   # hardware, input ownership, cancellation, render health
 node tools/verify-keymap.mjs          # modeled keys against both screen sources
-node tools/tune-exposure.mjs          # measured keycap RGB against the spec
+node tools/tune-exposure.mjs          # clean key faces/shell at several exposures, CRT off
+node tools/tune-case.mjs              # clean console/shell contrast with photo provenance
 node tools/profile.mjs --label base   # frames, passes, draw calls, CPU, and host load
 node tools/profile.mjs --width 390 --height 844 --dpr 3 --label mobile
 node tools/probe-game.mjs             # plays Super Cósmico through keyboard and 3D joystick

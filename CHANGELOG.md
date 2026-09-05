@@ -2,7 +2,12 @@
 
 Notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## [0.2.1] — Unreleased
+## [0.2.1] — 2026-09-05
+
+### Fixed
+
+- Restore the console's dark graphite contrast with a closer softbox and weaker directional light, preserving geometry, material colors, and exposure.
+- Replace contaminated calibration crops with clean surface samples, keep the CRT off during measurements, and save photographic provenance and captures instead of treating material RGB as an output target.
 
 ## [0.2.0] — 2026-09-05
 

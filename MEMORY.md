@@ -42,9 +42,9 @@ completed plan are linked from `memory/2026-09-05.md`.
 
 ## Measured calibrations
 
-- AgX exposure: **0.72**. The original ROI sweep reported keycaps at
-  rgb(184,181,175) against `#B8B5AC` = rgb(184,181,172); the current render no longer
-  reproduces that result, as recorded below.
+- AgX exposure: **0.72**, retained after the clean-surface lighting calibration.
+  Keycap material RGB is not a target for illuminated output pixels; the former mixed
+  crop included dark gaps. See SPEC §6 for the corrected measurement provenance.
 - Bloom: **threshold 1.45, intensity 0.6**. A/B showed that threshold 1.0 admitted the
   light keycaps and washed out the QWERTY block.
 - Keycap roughness: **0.55 fresh / 0.36 worn**. The former 0.42/0.28 values produced
@@ -95,15 +95,17 @@ completed plan are linked from `memory/2026-09-05.md`.
   saving holds at any resolution while resolution drops are the most visible loss on a
   text-bearing CRT. Full spec and after-numbers: `docs/PERF-SPEC.md`.
 
-## Open measured mismatches
+## Lighting calibration — 2026-09-05
 
-- The console-top/keyboard-shell RGB ratio measures **0.85/0.74/0.69** in the render
-  versus **0.36/0.28/0.25** in `CF3000_and_XP800.jpg`. The albedo ratio is already close;
-  the top receives about twice the keyboard's illumination. Fix lighting distribution,
-  not shell color, and verify with `tools/tune-case.mjs`.
-- Exposure 0.72 now measures QWERTY keycaps at **rgb(172,169,162)**, while exposure 1.0
-  produces **rgb(184,181,175)**. Re-run `tools/tune-exposure.mjs` before changing the
-  documented exposure target.
+- Clean console/keyboard samples replaced ROIs crossing the reference logo and rendered
+  keys. A smaller, closer key and weaker directional light restore the reference's
+  relative console darkness. Geometry, material colors, bloom and exposure stay intact.
+- The earlier claim of twice the keyboard's illumination was unsupported: tonemapped
+  RGB ratios do not isolate lighting. Likewise, a mixed keycap crop below the material's
+  RGB did not show underexposed key faces. The corrected tools preserve screenshots and
+  sample coordinates so those assumptions can be checked.
+- The photographs have different flash, exposure and color casts. The measured contrast
+  ranges are local visual anchors, not proof of photographic identity at every angle.
 
 ## Expensive lessons
 

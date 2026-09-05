@@ -8,16 +8,14 @@ import type { ModuleContext, PowerState, SceneModule } from './types.ts'
  * A photographic set floating in a void, not a lit room. The rig is built the way a
  * stills photographer builds one, and every source has exactly one job:
  *
- *  1. **Key** — a 1.2 × 0.8 m RectAreaLight softbox, upper front-left at ~37°, 4500 K.
- *     It is *dominant*: it alone puts the console's top plane roughly three stops above
- *     its shaded flank, and because it is a real rectangle the LTC specular it leaves on
- *     the lid is a soft-edged **rectangle** with a straight long edge — not the round
- *     blob a point light or a blurred IBL blob produces.
+ *  1. **Key** — a 0.8 × 0.4 m RectAreaLight softbox, above the keyboard's front-left,
+ *     4500 K. Its proximity keeps the keyboard legible while letting the console's
+ *     graphite lid fall darker. SPEC §6 records the clean-surface capture measurements.
  *  2. **Key shadow** — a DirectionalLight co-directional with the key. RectAreaLight
- *     cannot cast, so this carries ~30 % of the key energy and all of the cast shadow.
+ *     cannot cast, so this supplies the cast shadow at a subordinate intensity.
  *  3. **Fill** — a second RectAreaLight at ~1/10 the key, opposite side, 6000 K. Opens
  *     the right flank without touching the modelling.
- *  4. **Rim** and **Kicker** — two *thin, bright* strips (0.05 m tall). A strip is what
+ *  4. **Rim** and **Kicker** — two thin strips (0.032 m and 0.05 m tall). A strip is what
  *     draws a crisp specular line along the 5.5 mm case fillet; a broad soft source just lifts
  *     the whole plane and the silhouette dissolves. `rim` sits behind-left for the 3/4
  *     views, `kicker` low at front-left for the reverse views (and doubles as the
@@ -152,10 +150,8 @@ export function balancedLightColour(
 // ---------------------------------------------------------------------------
 
 /**
- * Scene white point. Sits *above* the key so a 4500 K key still reads warm on the plastic
- * (R − B ≈ +15 on a lit plane, matching the reference photograph's +13) while the 6000 K
- * fill reads cool. Balancing at the key temperature would neutralise exactly the warm/cool
- * separation SPEC §6 asks for and a 1985 machine would render as a 1998 beige box.
+ * Scene white point. Above the key temperature so the 4500 K key reads warm while
+ * the 6000 K fill reads cool, preserving the separation requested in SPEC §6.
  */
 const DEFAULT_WHITE_BALANCE = 5150
 
@@ -172,24 +168,18 @@ const KELVIN = {
 } as const
 
 /**
- * Base intensities before `exposureScale`. RectAreaLight is in nits, SpotLight in
- * candela, DirectionalLight in lux — three.js physical units (r155+).
- *
- * Calibration target (measured off the 1920×1080 hero capture, after AgX at exposure 1):
- * the console's top plane lands ≈ 130–150 sRGB, its shaded right flank ≈ 25–40, and the
- * metal/gloss speculars punch past linear 1.0 so the tone curve's shoulder actually gets
- * used. The key/shadow split is ~70/30: enough directional energy that removing it in
- * shadow is a real occlusion, little enough that its hard terminator never shows.
+ * Base intensities before `exposureScale`. RectAreaLight is in nits and
+ * DirectionalLight in lux; their numeric intensities are not an energy ratio.
+ * The directional contribution is deliberately small: unlike the nearby area key,
+ * it has no distance falloff and otherwise lifts the console relative to the keyboard.
  */
 const BASE = {
   key: 10.6,
-  keyShadow: 3.35,
+  keyShadow: 1.0,
   fill: 1.05,
   /**
-   * Thin strip behind-left. Deliberately an order of magnitude brighter than the key
-   * and an order of magnitude smaller in solid angle: it contributes under 10 % of the
-   * top plane's diffuse level, yet its *specular* reflection in a 2 mm fillet clips the
-   * tone curve's shoulder. That is where the frame's white point comes from.
+   * Thin strip behind-left. Small solid angle limits diffuse spill; high radiance
+   * keeps its specular reflection visible along the case fillet.
    */
   rim: 280,
   /** Thin strip low front-left. Rims the reverse views and lifts the fascia off black. */
@@ -402,13 +392,11 @@ interface SoftboxSpec {
 }
 
 /**
- * Panels are placed on the *same* directions as the real lights. If the IBL's bright
- * patch and the RectAreaLight disagree, glossy surfaces show two highlights from one
- * source — the classic giveaway. Their aspect ratios match the real softboxes too, so
- * the reflection in the CRT glass reads as a rectangle.
+ * Broad studio panels supply the glass and metal reflections. The local key has
+ * finite-distance falloff that this distant environment cannot reproduce.
  */
 const ENV_SOFTBOXES: readonly SoftboxSpec[] = [
-  // Key softbox, upper front-left, on KEY_DIR. High radiance, modest solid angle: it is
+  // Key softbox, upper front-left. High radiance, modest solid angle: it is
   // here to be *seen* in glass and metal, not to light the scene.
   {
     width: 3.0,
@@ -588,13 +576,13 @@ function place(azimuthDeg: number, elevationDeg: number, distance: number): THRE
 }
 
 /**
- * Key: upper front-left at 37° elevation, 40° off axis. This is the classic
- * three-quarter product key — high enough to model the top plane, off-axis enough that
- * its rectangular reflection lands on the lid rather than straight back at the lens.
+ * The nearby key aims at the keyboard. Moving the old broad source forward restores
+ * the photographed console/keyboard contrast without darkening either material.
  */
-const KEY_POS = place(-40, 37, 1.05)
+const KEY_AIM = new THREE.Vector3(0, 0.03, 0.265)
+const KEY_POS = new THREE.Vector3(-0.15, 0.4, 0.55)
 /** Direction the key arrives from, for the co-directional shadow caster. */
-const KEY_DIR = KEY_POS.clone().sub(AIM).normalize()
+const KEY_DIR = KEY_POS.clone().sub(KEY_AIM).normalize()
 /** Distance the shadow-casting directional sits at, so its ortho depth range stays tight. */
 const KEY_SHADOW_DISTANCE = 2.0
 
@@ -602,9 +590,7 @@ const FILL_POS = place(58, 20, 1.2)
 /**
  * Behind-left strip. Parked *far* back on purpose: a rim's diffuse spill falls with the
  * square of its distance while the brightness of its specular reflection does not, so
- * distance is the knob that buys a crisp edge line without washing the top plane. At
- * 0.9 m this strip was contributing 89 % of the lid's diffuse level; at 2.4 m it is
- * about 20 %, and the highlight it draws on the rear fillets is unchanged.
+ * distance is the knob that buys an edge line without washing the top plane.
  */
 const RIM_POS = place(-132, 20, 4.0)
 /** Low front-left strip: rims the reverse views and lifts the fascia off black. */
@@ -692,12 +678,10 @@ class StudioLighting implements LightingRig {
     if (this.backdropEnabled) group.add(this.buildBackdrop())
 
     // --- Key ----------------------------------------------------------------
-    // 1.2 × 0.8 m softbox. The aspect matters: it is what makes the highlight on the
-    // lid a rectangle with a straight long edge instead of a round lobe.
-    const key = new THREE.RectAreaLight(this.colourAt(KELVIN.key), BASE.key * e, 1.2, 0.8)
+    const key = new THREE.RectAreaLight(this.colourAt(KELVIN.key), BASE.key * e, 0.8, 0.4)
     key.name = 'key'
     key.position.copy(KEY_POS)
-    key.lookAt(AIM.x, AIM.y, AIM.z)
+    key.lookAt(KEY_AIM)
     group.add(key)
 
     // RectAreaLight cannot cast shadows, so a directional stands in from the same
@@ -712,8 +696,7 @@ class StudioLighting implements LightingRig {
     this.configureKeyShadow(keyShadow)
 
     // --- Fill ---------------------------------------------------------------
-    // Opposite side, cooler, ~1/6 of the key. Opens the right flank without killing
-    // the modelling — the ratio is the whole point, so do not raise it "to see more".
+    // Cooler and weaker, opening the opposite flank without flattening the key.
     const fill = new THREE.RectAreaLight(this.colourAt(KELVIN.fill), BASE.fill * e, 1.3, 0.9)
     fill.name = 'fill'
     fill.position.copy(FILL_POS)
@@ -721,9 +704,7 @@ class StudioLighting implements LightingRig {
     group.add(fill)
 
     // --- Rim ----------------------------------------------------------------
-    // A 5 cm strip, not a panel. Small and bright is what puts a *crisp* specular line
-    // on a 2 mm fillet; big and soft just raises the whole plane and the silhouette
-    // dissolves into the void — which is precisely the failure this replaces.
+    // A narrow strip keeps the rear edge legible without lifting the whole lid.
     const rim = new THREE.RectAreaLight(this.colourAt(KELVIN.rim), BASE.rim * e, 2.0, 0.032)
     rim.name = 'rim'
     rim.position.copy(RIM_POS)
