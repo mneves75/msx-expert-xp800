@@ -4,6 +4,14 @@ Curated project decisions and measurements. Read this with the newest
 `memory/YYYY-MM-DD.md`; implementation details belong in code and current rules belong in
 `AGENTS.md`.
 
+## Current deployment
+
+Version **0.2.0** is deployed to production. Staging tag `v0.2.0-beta10` and
+production tag `v0.2.0` identify the same verified application commit,
+`17368b11778c86e3f81972dba74b56466180dd01`. Linux CI and both live deployments passed;
+all nine public files match the final build byte for byte. Release evidence and the
+completed plan are linked from `memory/2026-09-05.md`.
+
 ## Product and architecture decisions
 
 - The project is a product-photography-grade Three.js replica of the 1985 Gradiente
