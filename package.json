@@ -29,7 +29,7 @@
     "deploy:staging": "pnpm build && node node_modules/wrangler/bin/wrangler.js deploy --env staging"
   },
   "dependencies": {
-    "n8ao": "2.0.0",
+    "n8ao": "2.0.1",
     "postprocessing": "6.39.3",
     "three": "0.185.1"
   },
