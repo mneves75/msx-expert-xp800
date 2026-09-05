@@ -16,7 +16,7 @@ jobs:
   build:
     name: Typecheck, lint & build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       # Actions pinned by commit SHA: a tag (v4, v6…) is mutable and can silently start
       # pointing at different code — the SHA cannot.

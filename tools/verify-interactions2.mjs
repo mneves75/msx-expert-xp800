@@ -2,6 +2,7 @@
 import { launchBrowser, targetUrl, WEBMSX_URL } from './browser.mjs'
 const OFFLINE = process.argv.includes('--offline') || process.env.MSX_OFFLINE === '1'
 const SOFTWARE = process.env.MSX_SOFTWARE_RENDERER === '1'
+const ANIMATION_TIMEOUT = SOFTWARE ? 120_000 : 30_000
 const browser = await launchBrowser(SOFTWARE ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : [])
 try {
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
@@ -40,12 +41,12 @@ const check = (id, name, pass, detail = '') => {
   console.log(`${pass ? '✓' : '✗'} ${id} ${name}${detail ? ` — ${detail}` : ''}`)
 }
 
-const out = await page.evaluate(async (offline) => {
+const out = await page.evaluate(async ({ offline, animationTimeout }) => {
   const itx = window.__msx.interactions
   const S = () => itx.getState()
   const wait = (ms) => new Promise((r) => setTimeout(r, ms))
   const until = async (predicate, label) => {
-    const deadline = performance.now() + 30_000
+    const deadline = performance.now() + animationTimeout
     while (!predicate()) {
       if (performance.now() > deadline) throw new Error(`Timed out: ${label}`)
       await wait(50)
@@ -273,7 +274,7 @@ const out = await page.evaluate(async (offline) => {
   o.finalOff = S().power.warmth
 
   return o
-}, OFFLINE)
+}, { offline: OFFLINE, animationTimeout: ANIMATION_TIMEOUT })
 
 check('I3a', 'power liga', out.powerOn === true)
 check('I3b', 'CRT warm-up é rampa', out.earlyWarmth < out.lateWarmth && out.earlyWarmth < 0.9, `${out.earlyWarmth.toFixed(2)}→${out.lateWarmth.toFixed(2)}`)
@@ -366,10 +367,10 @@ await page.waitForFunction(() => {
     interactions.slots.get('A').phase === 'inserido' && engine.framesRequested === 0 &&
     [...interactions.slots.values()].every((slot) => !slot.insertion.moving &&
       !slot.flap.moving && slot.approach.isSettled(1e-4))
-}, null, { timeout: 30_000 })
-const idleFrames = await page.evaluate(async () => {
+}, null, { timeout: ANIMATION_TIMEOUT })
+const idleFrames = await page.evaluate(async (animationTimeout) => {
   const { engine } = window.__msx
-  const deadline = performance.now() + 30_000
+  const deadline = performance.now() + animationTimeout
   let before = engine.renderer.info.render.frame
   while (performance.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -380,8 +381,8 @@ const idleFrames = await page.evaluate(async () => {
     }
     before = after
   }
-  throw new Error('Powered-off scene did not settle within 30 seconds')
-})
+  throw new Error(`Powered-off scene did not settle within ${animationTimeout} ms`)
+}, ANIMATION_TIMEOUT)
 check('I12b', 'cartucho assentado com energia desligada deixa o render descansar', idleFrames === 0, `submissões=${idleFrames}`)
 await page.getByRole('button', { name: 'Ejetar o cartucho do slot A', exact: true }).click()
 
@@ -406,7 +407,7 @@ const travelResult = (before, during, after) => {
     after.every((y, i) => Math.abs(y - before[i]) < 0.00001)
 }
 const waitForKeyHeights = async (before, pressed) => {
-  const deadline = Date.now() + 15_000
+  const deadline = Date.now() + (SOFTWARE ? ANIMATION_TIMEOUT : 15_000)
   while (Date.now() < deadline) {
     const heights = await keyHeights()
     if (before.length && heights.length === before.length && (pressed
