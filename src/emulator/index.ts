@@ -139,7 +139,10 @@ class RoutedScreenSource implements ScreenSource {
   private runtimeDemoted = false
   private graceTimer: number | null = null
   private routeController: AbortController | null = null
-  /** Ponte ainda não promovida; preservada entre ciclos de energia cancelados. */
+  /**
+   * Ponte que não é a ativa: uma tentativa em voo ou a Room dormente depois do último
+   * cartucho ejetado. Desligada, mas nunca descartada à toa — o wmsx.js só roda uma vez.
+   */
   private candidateBridge: WebMsxBridge | null = null
   private readonly desiredCartridges = new Map<'A' | 'B', string>()
   private resolveReady: ((kind: 'webmsx' | 'procedural') => void) | null = null
@@ -276,10 +279,9 @@ class RoutedScreenSource implements ScreenSource {
         // desta finalização, enquanto `starting` ainda estava de pé e portanto o
         // pedido de promoção foi ignorado. Retome aqui.
         //
-        // `candidateBridge === null` conta como retomável: quer dizer que a
-        // tentativa anterior foi cancelada e ninguém é dono do lugar, então uma
-        // ponte nova pode subir. Sem isso, ejetar e reinserir em seguida perdia a
-        // promoção para sempre e a tela ficava no BASIC com cartucho no slot.
+        // A mesma ponte (cancelada e mantida desligada) ou nenhuma contam como
+        // retomáveis. Sem isso, ejetar e reinserir em seguida perdia a promoção
+        // para sempre e a tela ficava no BASIC com cartucho no slot.
         if (
           this.powered &&
           this.firstUsable &&
@@ -351,11 +353,8 @@ class RoutedScreenSource implements ScreenSource {
     // mapa de cartuchos já vazio e acendia o C-BIOS sem cartucho assim mesmo.
     this.clearGrace()
     this.routeController?.abort()
-    if (this.candidateBridge !== null) {
-      const pending = this.candidateBridge
-      this.candidateBridge = null
-      pending.dispose()
-    }
+    // O abort já mata a tentativa; parar (e não descartar) preserva a Room one-shot.
+    this.candidateBridge?.stop()
 
     if (this.active.kind === 'webmsx') {
       void this.returnToProcedural().catch((error: unknown) => {
@@ -372,9 +371,9 @@ class RoutedScreenSource implements ScreenSource {
 
   /**
    * Devolve a tela ao renderizador procedural sem marcar o WebMSX como indisponível:
-   * não houve falha nenhuma, o usuário só ficou sem cartucho. A ponte é descartada
-   * para não deixar CPU e áudio girando atrás de uma tela que ninguém vê; uma nova
-   * inserção sobe outra do zero.
+   * não houve falha nenhuma, o usuário só ficou sem cartucho. A ponte fica dormente,
+   * desligada (sem CPU nem áudio), e a próxima inserção a religa. Descartá-la obrigava
+   * a reavaliar o wmsx.js a cada ciclo: medidos +1,5–2 MB de heap retidos por ejeção.
    */
   private async returnToProcedural(): Promise<void> {
     if (this.disposed || !this.powered) return
@@ -383,7 +382,11 @@ class RoutedScreenSource implements ScreenSource {
     const retiring = this.webmsx
     this.webmsx = null
     this.active = this.procedural
-    retiring?.dispose()
+    if (retiring !== null) {
+      retiring.stop()
+      if (this.candidateBridge === null) this.candidateBridge = retiring
+      else retiring.dispose()
+    }
     await this.syncProceduralCartridges()
     if (this.disposed || !this.powered) return
     this.active = this.procedural
@@ -499,10 +502,9 @@ class RoutedScreenSource implements ScreenSource {
     // Última verificação antes de trocar: o cartucho pode ter saído enquanto o
     // WebMSX subia. Promover agora acenderia o C-BIOS com os slots vazios — o beco
     // sem saída que `webMsxNeedsCartridge` existe para impedir. Aqui não houve
-    // falha, então a ponte é descartada sem marcar o WebMSX como indisponível.
+    // falha: a ponte só é desligada e fica como candidata para a próxima inserção.
     if (!this.webMsxHasWorkToDo()) {
-      bridge.dispose()
-      if (this.candidateBridge === bridge) this.candidateBridge = null
+      bridge.stop()
       if (!this.firstUsable) await this.activateProcedural(signal)
       return
     }

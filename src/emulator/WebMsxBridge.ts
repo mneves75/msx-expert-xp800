@@ -294,6 +294,8 @@ export class WebMsxBridge implements ScreenSource {
   private readonly placeholder: THREE.DataTexture
   private readonly options: WebMsxBridgeOptions
   private readonly pressed = new Set<string>()
+  // ShiftLeft/ShiftRight (e outros aliases) dividem uma tecla da matriz: solta só com o último.
+  private readonly keyHolders = new Map<string, Set<string>>()
   private readonly pressedAt = new Map<string, number>()
   private readonly releaseTimers = new Map<string, number>()
   private mounted = false
@@ -474,6 +476,12 @@ export class WebMsxBridge implements ScreenSource {
     const key = webMsxKeyForCode(code)
     if (key === null) return
 
+    const holders = this.keyHolders.get(key) ?? new Set<string>()
+    if (down) holders.add(code)
+    else holders.delete(code)
+    if (holders.size > 0) this.keyHolders.set(key, holders)
+    else this.keyHolders.delete(key)
+
     if (down) {
       const pendingRelease = this.releaseTimers.get(key)
       if (pendingRelease !== undefined) {
@@ -488,7 +496,7 @@ export class WebMsxBridge implements ScreenSource {
       return
     }
 
-    if (!this.pressed.has(key)) return
+    if (holders.size > 0 || !this.pressed.has(key)) return
     if (this.releaseTimers.has(key)) return
     const held = performance.now() - (this.pressedAt.get(key) ?? 0)
     if (held >= MIN_KEY_HOLD_MS) {
@@ -594,6 +602,7 @@ export class WebMsxBridge implements ScreenSource {
     for (const timer of this.releaseTimers.values()) globalThis.clearTimeout(timer)
     this.releaseTimers.clear()
     this.pressed.clear()
+    this.keyHolders.clear()
     this.pressedAt.clear()
   }
 

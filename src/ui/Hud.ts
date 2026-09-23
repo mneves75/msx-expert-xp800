@@ -1,5 +1,10 @@
 import './hud.css'
-import type { InteractionsHandle, InteractionsState, SlotId } from '../interaction/Interactions'
+import {
+  LOCAL_ROM_MAX_BYTES,
+  type InteractionsHandle,
+  type InteractionsState,
+  type SlotId,
+} from '../interaction/Interactions'
 
 /** Native DOM controls over one injected interaction module. */
 export interface HudHandle {
@@ -51,8 +56,6 @@ const TXT = {
   loadRom: 'Carregar ROM…',
   loadRomHint:
     'Roda um arquivo .rom seu no cartucho preto — o arquivo fica só no seu navegador.',
-  loadRomReadError: 'Não foi possível ler o arquivo escolhido.',
-  loadRomTooBig: 'Arquivo acima de 2 MB — nada foi carregado.',
   reset: 'Reiniciar',
   resetHint: 'Empurra a tampa do slot A — o Expert não tem tecla de reset.',
   resetView: 'Redefinir vista',
@@ -201,7 +204,7 @@ class Hud implements HudHandle {
     this.state = interactions.getState()
     this.mobileQuery =
       typeof window.matchMedia === 'function'
-        ? window.matchMedia('(max-width: 46rem), (max-height: 30rem) and (pointer: coarse)')
+        ? window.matchMedia('(max-width: 46rem), (max-height: 36rem)')
         : null
 
     const root = el('div', 'hud')
@@ -307,8 +310,8 @@ class Hud implements HudHandle {
       if (file === undefined) return
       // Recusa ANTES de ler: `.bin` aceita seleção acidental de imagens enormes,
       // e `arrayBuffer()` alocaria o arquivo inteiro só para rejeitá-lo depois.
-      if (file.size > 2 * 1024 * 1024) {
-        this.showFileError(TXT.loadRomTooBig)
+      if (file.size > LOCAL_ROM_MAX_BYTES) {
+        this.interactions.rejectLocalRom('too-big')
         return
       }
       file
@@ -317,7 +320,7 @@ class Hud implements HudHandle {
           if (!this.disposed) this.interactions.loadLocalRom(new Uint8Array(buffer), file.name)
         })
         .catch(() => {
-          this.showFileError(TXT.loadRomReadError)
+          if (!this.disposed) this.interactions.rejectLocalRom('unreadable')
         })
     })
     const loadRomButton = actionButton(TXT.loadRom, null)
@@ -627,12 +630,6 @@ class Hud implements HudHandle {
 
   // ── Estado ──────────────────────────────────────────────────────────────────
 
-  private showFileError(message: string): void {
-    if (this.disposed) return
-    this.state = { ...this.state, note: message, error: message }
-    this.render()
-  }
-
   getState(): InteractionsState {
     return this.state
   }
@@ -748,6 +745,8 @@ class Hud implements HudHandle {
     const { power, slotA, slotB } = this.state
     const coarsePower = !power.on ? TXT.powerOff : power.warmth < 0.995 ? TXT.powerWarming : TXT.powerOn
     const summary = [
+      // O aviso é o evento novo: vem primeiro, antes do resumo que o leitor já ouviu.
+      ...(this.state.note === null ? [] : [this.state.note]),
       `${TXT.readoutPower}: ${coarsePower}.`,
       `${TXT.readoutSlotA}: ${slotA?.name ?? TXT.emptySlot}.`,
       `${TXT.readoutSlotB}: ${slotB?.name ?? TXT.emptySlot}.`,

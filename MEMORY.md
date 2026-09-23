@@ -21,14 +21,16 @@ completed plan are linked from `memory/2026-09-05.md`.
 - All geometry and textures are procedural; the gzipped project budget is below 3 MB,
   excluding WebMSX.
 - Empty cartridge slots use the procedural BASIC screen. Insertion promotes to WebMSX;
-  ejecting the last cartridge returns to BASIC. A source that resumes after dormancy must
-  reconcile its slots with desired state.
+  ejecting the last cartridge returns to BASIC. The one-shot WebMSX room then stays
+  dormant (powered off) and the next insertion revives it; it is never re-injected. A
+  source that resumes after dormancy must reconcile its slots with desired state.
 - Pushing either slot cover performs soft reset; the real machine has no reset key.
 - The red cartridge runs the authorial Z80 game **Super Cósmico**. The black cartridge
   runs a user-selected ROM of at most 2 MB; bytes remain in browser memory.
-- The mobile HUD is a modal bottom sheet with a sticky close control, backdrop-tap, and
-  downward-grip-swipe dismissal. Closing restores focus to its launcher, and
-  `verify-interactions2.mjs` owns the visibility and hit-target regression checks.
+- Narrow (≤ 46rem) or short (≤ 36rem) viewports use a modal bottom sheet, at most 40rem
+  wide, with a sticky close control, backdrop-tap, and downward-grip-swipe dismissal.
+  Closing restores focus to its launcher, and `verify-interactions2.mjs` owns the
+  visibility and hit-target regression checks.
 - Modules return `false` from `update()` when settled; render-coupled work belongs in
   `beforeRender()`. External mutations call `engine.requestRender(2)`, and moved or hidden
   shadow casters also invalidate the frozen shadow map.

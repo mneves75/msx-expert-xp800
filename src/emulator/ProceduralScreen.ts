@@ -260,8 +260,15 @@ export class ProceduralScreen implements ScreenSource {
   private inputLine = ''
   private readonly program = new Map<number, string>()
   private readonly variables = new Map<string, BasicValue>()
-  private shift = false
-  private control = false
+  // Os dois Shift (e Control) mapeiam na mesma tecla: vale enquanto algum estiver preso.
+  private readonly shiftCodes = new Set<string>()
+  private readonly controlCodes = new Set<string>()
+  private get shift(): boolean {
+    return this.shiftCodes.size > 0
+  }
+  private get control(): boolean {
+    return this.controlCodes.size > 0
+  }
   private caps = true
   private cartTitle: string | null = null
   private readonly cartridges = new Map<'A' | 'B', string>()
@@ -321,6 +328,9 @@ export class ProceduralScreen implements ScreenSource {
 
   public stop(): void {
     this.running = false
+    // Com a fonte parada o keyup nunca chega; modificador preso sobreviveria ao religar.
+    this.shiftCodes.clear()
+    this.controlCodes.clear()
     this.mode = 'off'
     this.dirty = true
     this.flushFrame()
@@ -380,11 +390,13 @@ export class ProceduralScreen implements ScreenSource {
   public sendKey(code: string, down: boolean): void {
     if (!this.running || proceduralKeyForCode(code) === null) return
     if (code === 'ShiftLeft' || code === 'ShiftRight') {
-      this.shift = down
+      if (down) this.shiftCodes.add(code)
+      else this.shiftCodes.delete(code)
       return
     }
     if (code === 'ControlLeft' || code === 'ControlRight') {
-      this.control = down
+      if (down) this.controlCodes.add(code)
+      else this.controlCodes.delete(code)
       return
     }
     if (!down) return

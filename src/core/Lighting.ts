@@ -618,6 +618,7 @@ class StudioLighting implements LightingRig {
   private readonly backdropEnabled: boolean
 
   private scene: THREE.Scene | null = null
+  private renderer: THREE.WebGLRenderer | null = null
   private envRenderTarget: THREE.WebGLRenderTarget | null = null
   private backdrop: THREE.Mesh | null = null
 
@@ -657,6 +658,7 @@ class StudioLighting implements LightingRig {
     RectAreaLightUniformsLib.init()
 
     this.scene = ctx.scene
+    this.renderer = ctx.renderer
     this.applyRendererDefaults(ctx.renderer)
 
     const group = new THREE.Group()
@@ -667,6 +669,7 @@ class StudioLighting implements LightingRig {
     this.environmentTexture = this.generateEnvironment(ctx.renderer)
     ctx.scene.environment = this.environmentTexture
     ctx.scene.environmentIntensity = this.environmentIntensity
+    ctx.renderer.domElement.addEventListener('webglcontextrestored', this.onContextRestored)
 
     const e = this.exposureScale
     this.currentExposure = e
@@ -810,6 +813,8 @@ class StudioLighting implements LightingRig {
   // -------------------------------------------------------------------------
 
   public dispose(): void {
+    this.renderer?.domElement.removeEventListener('webglcontextrestored', this.onContextRestored)
+    this.renderer = null
     const lights = this.lights
     if (lights !== null) {
       lights.keyShadow.shadow.dispose()
@@ -880,6 +885,20 @@ class StudioLighting implements LightingRig {
     mesh.raycast = (): void => {}
     this.backdrop = mesh
     return mesh
+  }
+
+  /**
+   * A restored context recreates render targets empty, so the one-shot PMREM output
+   * would leave image-based lighting black. Engine already requests the next frames.
+   */
+  private readonly onContextRestored = (): void => {
+    const renderer = this.renderer
+    const scene = this.scene
+    if (renderer === null || scene === null) return
+    const previous = this.environmentTexture
+    this.envRenderTarget?.dispose()
+    this.environmentTexture = this.generateEnvironment(renderer)
+    if (scene.environment === previous) scene.environment = this.environmentTexture
   }
 
   /**

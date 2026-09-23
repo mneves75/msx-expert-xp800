@@ -40,8 +40,6 @@ export interface ModuleContext {
   readonly camera: THREE.PerspectiveCamera
   /** Shared PBR material library — never construct case plastic yourself. */
   readonly materials: MaterialLibrary
-  /** Seconds since start. */
-  readonly clock: THREE.Clock
 }
 
 export interface SceneModule {

@@ -43,6 +43,9 @@
 
   /* ── Ritmo ────────────────────────────────────────────────────────────────── */
   --hud-gutter: clamp(0.875rem, 2.6vw, 1.75rem);
+  /* viewport-fit=cover: em paisagem o entalhe e os cantos ocupam as bordas laterais. */
+  --hud-inset-left: max(var(--hud-gutter), env(safe-area-inset-left, 0px));
+  --hud-inset-right: max(var(--hud-gutter), env(safe-area-inset-right, 0px));
   --hud-radius: 4px;
   --hud-ease: cubic-bezier(0.22, 0.75, 0.24, 1);
 
@@ -89,8 +92,8 @@
 .hud__brand {
   position: absolute;
   top: clamp(0.875rem, 2.6vh, 1.6rem);
-  left: var(--hud-gutter);
-  max-width: min(24rem, calc(100vw - 2 * var(--hud-gutter)));
+  left: var(--hud-inset-left);
+  max-width: min(24rem, calc(100vw - var(--hud-inset-left) - var(--hud-inset-right)));
   transition:
     opacity 260ms var(--hud-ease),
     visibility 260ms;
@@ -148,7 +151,8 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 1.25rem;
-  padding: 0 var(--hud-gutter) clamp(0.875rem, 2.2vh, 1.6rem);
+  padding: 0 var(--hud-inset-right) calc(clamp(0.875rem, 2.2vh, 1.6rem) + env(safe-area-inset-bottom, 0px))
+    var(--hud-inset-left);
   transition:
     opacity 260ms var(--hud-ease),
     visibility 260ms;
@@ -634,7 +638,7 @@
 .hud__sheet-toggle {
   display: none;
   position: absolute;
-  right: var(--hud-gutter);
+  right: var(--hud-inset-right);
   bottom: calc(0.875rem + env(safe-area-inset-bottom, 0px));
   align-items: center;
   gap: 0.5rem;
@@ -702,7 +706,7 @@
   cursor: pointer;
 }
 
-@media (max-width: 46rem), (max-height: 30rem) and (pointer: coarse) {
+@media (max-width: 46rem), (max-height: 36rem) {
   .hud {
     --hud-sheet: #090a0c;
   }
@@ -759,9 +763,14 @@
     flex-direction: column;
     align-items: stretch;
     gap: 0;
-    max-height: min(74svh, 34rem);
+    /* Em janelas largas e baixas a folha não atravessa a tela inteira. */
+    width: min(100%, 40rem);
+    margin-inline: auto;
+    /* vh primeiro: navegadores sem svh ignoram a segunda linha. */
     max-height: min(74vh, 34rem);
-    padding: 1rem 1.05rem calc(1.15rem + env(safe-area-inset-bottom, 0px));
+    max-height: min(74svh, 34rem);
+    padding: 1rem max(1.05rem, env(safe-area-inset-right, 0px))
+      calc(1.15rem + env(safe-area-inset-bottom, 0px)) max(1.05rem, env(safe-area-inset-left, 0px));
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;

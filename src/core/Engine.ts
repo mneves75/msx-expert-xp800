@@ -3,7 +3,7 @@ import type { MaterialLibrary, ModuleContext, SceneModule } from './types'
 import { CameraRig, type CameraRigOptions } from './CameraRig'
 
 /**
- * Engine — renderer, scene graph, camera rig, clock, module registry and frame loop.
+ * Engine — renderer, scene graph, camera rig, timer, module registry and frame loop.
  *
  * Owns nothing visual. Every piece of the machine arrives as a {@link SceneModule}
  * from `src/models/*`, and lighting / post-processing plug in through
@@ -83,7 +83,7 @@ export class Engine {
   readonly renderer: THREE.WebGLRenderer
   readonly scene: THREE.Scene
   readonly camera: THREE.PerspectiveCamera
-  readonly clock: THREE.Clock
+  private readonly timer = new THREE.Timer()
   readonly cameraRig: CameraRig
   readonly container: HTMLElement
 
@@ -183,9 +183,6 @@ export class Engine {
     this.camera.name = 'camera-principal'
     this.scene.add(this.camera)
 
-    // `THREE.Clock` is soft-deprecated in favour of `THREE.Timer`, but `ModuleContext`
-    // in types.ts pins the shared contract to `THREE.Clock`. Contract wins.
-    this.clock = new THREE.Clock(false)
     this.cameraRig = new CameraRig(this.camera, canvas, options.cameraRig ?? {})
 
     this.attachResize()
@@ -212,7 +209,6 @@ export class Engine {
         renderer: this.renderer,
         camera: this.camera,
         materials: this.materialLibrary,
-        clock: this.clock,
         engine: this,
         cameraRig: this.cameraRig,
       }
@@ -302,7 +298,8 @@ export class Engine {
     // O aquecimento do boot renderiza com a cena parcialmente revelada e consome o
     // needsUpdate inicial — o primeiro quadro real precisa de um atlas completo.
     this.renderer.shadowMap.needsUpdate = true
-    this.clock.start()
+    // Recomeça o delta: o tempo parado não vira um passo longo.
+    this.timer.reset()
     this.rafId = requestAnimationFrame(this.tick)
   }
 
@@ -338,7 +335,6 @@ export class Engine {
     if (!this.running) return
     this.running = false
     cancelAnimationFrame(this.rafId)
-    this.clock.stop()
   }
 
   /** Fires once the first frame has been presented (not merely submitted). */
@@ -427,8 +423,9 @@ export class Engine {
     }
 
     // Clamp so a backgrounded tab does not resume with a multi-second step.
-    const dt = Math.min(this.clock.getDelta(), 1 / 15)
-    const elapsed = this.clock.elapsedTime
+    this.timer.update(tickAt)
+    const dt = Math.min(this.timer.getDelta(), 1 / 15)
+    const elapsed = this.timer.getElapsed()
 
     // Rig e updates rodam SEMPRE — custam microssegundos e carregam os relógios de
     // idle/auto-rotate e o acordar das molas. O que o render-on-demand pula é só a

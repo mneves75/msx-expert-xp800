@@ -568,6 +568,183 @@ const powerAfterKeyboardClick = await page.evaluate(() => window.__msx.interacti
 check('I15', 'Espaço ativa o botão focado sem ir para o MSX', powerAfterKeyboardClick !== powerBeforeKeyboardClick)
 await page.keyboard.press('Space')
 
+// Corridas de cartucho, ROM local e modificadores: cada caso falhava no código anterior.
+const lifecycle = await page.evaluate(async ({ offline, animationTimeout, webMsxUrl }) => {
+  const itx = window.__msx.interactions
+  const S = () => itx.getState()
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+  const until = async (predicate, label) => {
+    const deadline = performance.now() + animationTimeout
+    while (!predicate()) {
+      if (performance.now() > deadline) throw new Error(`Timed out: ${label}`)
+      await wait(50)
+    }
+  }
+  const slotsEmpty = () => [...itx.slots.values()].every((rig) => rig.phase === 'vazio')
+  const o = {}
+  for (const slot of ['A', 'B']) itx.ejectCartridge(slot)
+  await until(slotsEmpty, 'slots empty before lifecycle checks')
+  itx.setPower(true)
+  await until(() => itx.screenRunning === true && S().emulator === 'procedural', 'BASIC running')
+
+  // Um segundo insert enquanto o cartucho sai não pode trocar a referência do slot.
+  itx.insertCartridge('A')
+  await until(() => itx.slots.get('A').phase === 'inserido', 'cartridge seated for leave race')
+  itx.ejectCartridge('A')
+  const leaving = itx.slots.get('A').cartridge
+  itx.insertCartridge('A')
+  o.leaveRace = { phase: itx.slots.get('A').phase, sameShell: itx.slots.get('A').cartridge === leaving }
+  await until(slotsEmpty, 'leaving cartridge reaches the desk')
+  o.leaveRace.slotA = S().slotA
+
+  // Shift preso no BASIC: dois aliases compartilham a tecla e o desligar descarta o keyup.
+  const proc = itx.screen?.routed?.procedural
+  if (!proc) throw new Error('Modifier checks require the procedural screen')
+  const events = []
+  const screen = itx.screen
+  const originalSendKey = screen.sendKey
+  screen.sendKey = function (code, down) { events.push([code, down]); return originalSendKey.call(this, code, down) }
+  const sent = (code, down) => events.some(([key, state]) => key === code && state === down)
+  try {
+    itx.pressKey('ShiftLeft')
+    await until(() => proc.shift === true, 'ShiftLeft closes')
+    itx.pressKey('ShiftRight')
+    await until(() => sent('ShiftRight', true), 'ShiftRight closes')
+    itx.releaseKey('ShiftRight')
+    await until(() => sent('ShiftRight', false), 'ShiftRight opens')
+    o.aliasHeld = proc.shift
+    // Independente de I17: garante um Shift realmente preso antes do ciclo de energia.
+    itx.releaseKey('ShiftLeft')
+    await until(() => sent('ShiftLeft', false), 'ShiftLeft opens')
+    itx.pressKey('ShiftLeft')
+    await until(() => proc.shift === true, 'ShiftLeft closes again')
+    itx.setPower(false)
+    itx.releaseKey('ShiftLeft')
+    await wait(300)
+    itx.setPower(true)
+    await until(() => itx.screenRunning === true, 'BASIC restarts')
+    o.shiftAfterPowerCycle = proc.shift
+  } finally { screen.sendKey = originalSendKey }
+
+  // ROM local escolhida com a máquina desligada precisa chegar à fonte no religar.
+  const rom = (marker) => {
+    const bytes = new Uint8Array(0x4000)
+    bytes.set([0x41, 0x42, 0x10, 0x40])
+    bytes[0x10] = 0xc9
+    bytes[0x20] = marker
+    return bytes
+  }
+  itx.loadLocalRom(rom(1), 'primeira.rom')
+  await until(() => [...itx.slots.values()].some((rig) => rig.romId === 'preto-generico' && rig.phase === 'inserido'),
+    'black cartridge seated')
+  await until(() => [...itx.appliedCartridges.values()].includes('preto-generico'), 'black cartridge applied')
+  // Online, esta é uma nova promoção depois de I4c ejetar o último cartucho.
+  if (!offline) await until(() => S().emulator === 'webmsx', 'local ROM re-promotes WebMSX')
+  o.repromoted = offline || S().emulator === 'webmsx'
+  const inserts = []
+  const retained = itx.screen
+  const originalInsert = retained.insertCartridge
+  retained.insertCartridge = function (slot, romId) { inserts.push(romId); return originalInsert.call(this, slot, romId) }
+  try {
+    itx.setPower(false)
+    itx.loadLocalRom(rom(2), 'segunda.rom')
+    itx.setPower(true)
+    await until(() => itx.screenRunning === true, 'retained source restarts')
+    const deadline = performance.now() + 3000
+    while (!inserts.includes('preto-generico') && performance.now() < deadline) await wait(50)
+    o.romReapplied = { sameSource: itx.screen === retained, inserts }
+  } finally { retained.insertCartridge = originalInsert }
+  for (const slot of ['A', 'B']) itx.ejectCartridge(slot)
+  await until(slotsEmpty, 'black cartridge back on the desk')
+  if (!offline) await until(() => S().emulator === 'procedural', 'BASIC restored after local ROM')
+  // Cada promoção depois de ejetar o último cartucho religa a mesma Room: reavaliar o
+  // wmsx.js retinha ~2 MB de heap por ciclo.
+  o.webMsxScripts = document.querySelectorAll(`script[src="${webMsxUrl}"]`).length
+  return o
+}, { offline: OFFLINE, animationTimeout: ANIMATION_TIMEOUT, webMsxUrl: WEBMSX_URL })
+check('I16', 'inserir durante a saída é recusado e o cartucho volta à mesa',
+  lifecycle.leaveRace.phase === 'saindo' && lifecycle.leaveRace.sameShell && lifecycle.leaveRace.slotA === null,
+  JSON.stringify(lifecycle.leaveRace))
+check('I17', 'soltar um Shift mantém o outro pressionado', lifecycle.aliasHeld === true)
+check('I18', 'desligar com Shift preso não deixa o BASIC maiúsculo', lifecycle.shiftAfterPowerCycle === false)
+check('I19', 'ROM local carregada desligado é reaplicada ao religar',
+  lifecycle.romReapplied.sameSource && lifecycle.romReapplied.inserts.includes('preto-generico'),
+  JSON.stringify(lifecycle.romReapplied))
+if (!OFFLINE) {
+  check('I23', 'reinserir após ejetar o último cartucho reaproveita o WebMSX carregado',
+    lifecycle.repromoted && lifecycle.webMsxScripts === 1, `repromovido=${lifecycle.repromoted} scripts=${lifecycle.webMsxScripts}`)
+}
+
+// A recusa feita pelo HUD antes de ler o arquivo sobrevive às publicações e é anunciada.
+await page.setInputFiles('.hud input[type="file"]', {
+  name: 'grande.rom', mimeType: 'application/octet-stream', buffer: Buffer.alloc(2 * 1024 * 1024 + 1),
+})
+const romNote = await page.evaluate(() => {
+  const { interactions } = window.__msx
+  const note = () => document.querySelector('.hud__note')?.textContent ?? ''
+  const first = note()
+  interactions.publish()
+  return { first, afterPublish: note(), announced: document.querySelector('.hud__sr')?.textContent ?? '' }
+})
+check('I20', 'recusa de ROM grande persiste e chega ao leitor de tela',
+  /2 MB/.test(romNote.first) && romNote.afterPublish === romNote.first && romNote.announced.startsWith(romNote.first),
+  JSON.stringify(romNote))
+
+// Contexto WebGL restaurado recria alvos vazios; o IBL precisa ser regenerado. Com a
+// intensidade calibrada (0,11) a perda é sutil, então a sonda amplia o IBL; o controle
+// negativo remove o ouvinte e prova que a medida enxerga o IBL apagado.
+const sceneLuma = async () => {
+  await page.evaluate(async () => {
+    window.__msx.engine.requestRender(4)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+  })
+  const png = await page.screenshot({ type: 'png', clip: { x: 400, y: 250, width: 800, height: 450 } })
+  return page.evaluate(async (base64) => {
+    const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob())
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const context = canvas.getContext('2d')
+    context.drawImage(bitmap, 0, 0)
+    const { data } = context.getImageData(0, 0, bitmap.width, bitmap.height)
+    let sum = 0
+    for (let i = 0; i < data.length; i += 4) sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]
+    return sum / (data.length / 4)
+  }, png.toString('base64'))
+}
+const cycleContext = (withListener) => page.evaluate(async (keep) => {
+  const { engine } = window.__msx
+  const lighting = engine.modules.find((module) => module.name === 'lighting')
+  const canvas = engine.renderer.domElement
+  if (!keep) canvas.removeEventListener('webglcontextrestored', lighting.onContextRestored)
+  const lose = engine.renderer.getContext().getExtension('WEBGL_lose_context')
+  const restored = new Promise((resolve) => canvas.addEventListener('webglcontextrestored', resolve, { once: true }))
+  lose.loseContext()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  lose.restoreContext()
+  await restored
+  if (!keep) canvas.addEventListener('webglcontextrestored', lighting.onContextRestored)
+}, withListener)
+const calibratedIbl = await page.evaluate(() => {
+  window.__msx.hud.setChromeVisible(false)
+  window.__msx.interactions.setPower(false)
+  const intensity = window.__msx.scene.environmentIntensity
+  window.__msx.scene.environmentIntensity = 3
+  return intensity
+})
+await page.waitForFunction(() => window.__msx.interactions.getState().power.warmth === 0, null, { timeout: ANIMATION_TIMEOUT })
+const lumaBefore = await sceneLuma()
+await cycleContext(true)
+const lumaRestored = await sceneLuma()
+await cycleContext(false)
+const lumaWithoutIbl = await sceneLuma()
+await cycleContext(true)
+await page.evaluate((intensity) => {
+  window.__msx.scene.environmentIntensity = intensity
+  window.__msx.hud.setChromeVisible(true)
+}, calibratedIbl)
+check('I22', 'contexto restaurado regenera a iluminação ambiente',
+  Math.abs(lumaRestored - lumaBefore) < lumaBefore * 0.02 && lumaWithoutIbl < lumaBefore * 0.9,
+  `antes=${lumaBefore.toFixed(1)} restaurado=${lumaRestored.toFixed(1)} controle-sem-IBL=${lumaWithoutIbl.toFixed(1)}`)
+
 // Última sonda: destrutiva apenas para esta página descartável. Um PostFX quebrado
 // precisa parar o motor e marcar a saúde como falsa, nunca virar render direto silencioso.
 const renderFailure = await page.evaluate(async () => {

@@ -24,8 +24,24 @@ test('deployment headers accept current policy and reject missing/broadened gran
     headers['content-security-policy'].replace(/(default-src|script-src)([^;]*);/g, '$1$2\u00a0;'),
     headers['content-security-policy'].replace(/(default-src|script-src)/g, '\v$1'),
     headers['content-security-policy'].replace(/https:\/\/cdn\.jsdelivr\.net\/[^;]+/, 'https://cdn.jsdelivr.net'),
+    headers['content-security-policy'] + '; frame-src *',
+    headers['content-security-policy'] + '; Child-Src *',
+    headers['content-security-policy'] + '; media-src https:',
+    headers['content-security-policy'] + '; constructor *',
+    headers['content-security-policy'] + '; __proto__ *',
+    headers['content-security-policy'] + '; toString *',
   ]) assert.equal(valid({ ...headers, 'content-security-policy': csp }), false, csp)
-  assert.equal(valid({ ...headers, 'strict-transport-security': 'max-age=0' }), false)
+  for (const broken of [
+    { 'strict-transport-security': 'max-age=0' },
+    { 'strict-transport-security': 'max-age=63072000' },
+    { 'referrer-policy': 'unsafe-url' },
+    { 'cross-origin-opener-policy': undefined },
+    { 'cross-origin-resource-policy': 'cross-origin' },
+    { 'permissions-policy': 'geolocation=(), microphone=(), payment=()' },
+    { 'permissions-policy': 'geolocation=(), microphone=(), camera=(), payment=(), geolocation=(self)' },
+    { 'permissions-policy': 'geolocation=(), microphone=(), camera=(), payment=(), fullscreen=(*)' },
+    { 'permissions-policy': 'geolocation=(), microphone=(), camera=(), payment=(), usb=(*)' },
+  ]) assert.equal(valid({ ...headers, ...broken }), false, JSON.stringify(broken))
 })
 
 test('screen evidence requires a real visible subject, not just a healthy page', () => {

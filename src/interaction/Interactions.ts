@@ -87,6 +87,12 @@ export interface ShortcutHint {
 }
 
 /** What the HUD (and the console) can call. */
+/** Teto de uma ROM local — o Expert nunca viu cartucho maior; o HUD recusa antes de ler. */
+export const LOCAL_ROM_MAX_BYTES = 2 * 1024 * 1024
+
+/** Por que o HUD descartou um arquivo antes de entregar os bytes. */
+export type LocalRomRejection = 'too-big' | 'unreadable'
+
 export interface InteractionsHandle {
   readonly name: string
   getState(): InteractionsState
@@ -107,6 +113,8 @@ export interface InteractionsHandle {
    * Retorna `false` (com nota no HUD) se o arquivo não parecer uma ROM de MSX.
    */
   loadLocalRom(bytes: Uint8Array, fileName: string): boolean
+  /** Publica a recusa de um arquivo que o HUD descartou antes de ler os bytes. */
+  rejectLocalRom(reason: LocalRomRejection): void
 
   setWireframe(on: boolean): void
   toggleWireframe(): void
@@ -149,6 +157,7 @@ const TXT = {
   romInvalid:
     'Arquivo não parece uma ROM de MSX (assinatura "AB" ausente) — nada foi carregado.',
   romTooBig: 'ROM acima de 2 MB — o Expert nunca viu um cartucho desse tamanho.',
+  romUnreadable: 'Não foi possível ler o arquivo escolhido — nada foi carregado.',
   romNeedsEmulator:
     'ROM local pronta; ela roda quando o emulador WebMSX estiver ativo (requer internet).',
   resetDone: 'Reinício suave — tampa do compartimento empurrada.',
@@ -1450,7 +1459,8 @@ class Interactions implements InteractionsModule {
   insertCartridge(slot: SlotId, romId?: string): void {
     const rig = this.slots.get(slot)
     if (rig === undefined) return
-    if (rig.phase === 'inserido' || rig.phase === 'entrando') {
+    // Um cartucho saindo ainda ocupa o compartimento até pousar na mesa.
+    if (rig.phase !== 'vazio') {
       this.setNote(TXT.slotOccupied, false)
       return
     }
@@ -1505,7 +1515,7 @@ class Interactions implements InteractionsModule {
     // imagens de 32–64 KB com a página inteira e dumps pequenos legítimos).
     // Formato/mapper é decisão do emulador: recusas legítimas dele voltam pelo
     // caminho `cartridgeRejected` existente.
-    if (bytes.length > 2 * 1024 * 1024) {
+    if (bytes.length > LOCAL_ROM_MAX_BYTES) {
       this.setNote(TXT.romTooBig, true)
       return false
     }
@@ -1538,6 +1548,9 @@ class Interactions implements InteractionsModule {
           console.error('[Interactions] a fonte recusou a ROM local:', error)
           this.setNote(TXT.cartridgeRejected, true)
         })
+      } else {
+        // A fonte retida ainda guarda os bytes antigos: o próximo sync reinsere.
+        this.appliedCartridges.set(seated, null)
       }
     } else {
       const freeSlot = (['A', 'B'] as const).find((slot) => {
@@ -1554,6 +1567,10 @@ class Interactions implements InteractionsModule {
     )
     this.publish()
     return true
+  }
+
+  rejectLocalRom(reason: LocalRomRejection): void {
+    this.setNote(reason === 'too-big' ? TXT.romTooBig : TXT.romUnreadable, true)
   }
 
   private defaultRomFor(slot: SlotId): string | undefined {

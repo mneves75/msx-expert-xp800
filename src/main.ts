@@ -550,7 +550,9 @@ async function bootstrap(): Promise<void> {
           )
         }
         if (typeof window.requestIdleCallback === 'function') {
-          window.requestIdleCallback(warmAO)
+          // Sem timeout um thread ocupado adia o ócio indefinidamente, e a escada adaptativa
+          // (≥ 120 quadros) religaria o AO a frio em meio à interação.
+          window.requestIdleCallback(warmAO, { timeout: 1000 })
         } else {
           window.setTimeout(warmAO, 250)
         }

@@ -2,7 +2,28 @@
 
 Notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
-## [0.2.2] — Unreleased
+## [0.2.2] — 2026-09-23
+
+### Fixed
+
+- Refuse a second insertion while the previous cartridge is still leaving its slot, instead of stranding the old shell in the slot mouth.
+- Reapply a local ROM chosen while the machine was off or restarting, so the next power-on runs the new file rather than the previous one.
+- Clear held Shift/Control in the built-in BASIC when the machine powers off, and keep a key held while either of its aliases (Shift left/right) is still down.
+- Keep the WebMSX room dormant after the last cartridge is ejected; reinserting no longer reloads `wmsx.js` or retains about 2 MB of heap per cycle.
+- Regenerate the studio environment lighting after a WebGL context restore.
+- Keep oversized or unreadable ROM refusals visible across state updates and announce HUD notes to screen readers.
+- Respect side and bottom safe-area insets, prefer `svh` for the mobile sheet, and use the centered control sheet on short windows instead of overlapping docks.
+- Warm deferred ambient occlusion within one second even when the main thread stays busy.
+
+### Changed
+
+- Replaced the deprecated `THREE.Clock` with `THREE.Timer`; `ModuleContext` no longer carries an unused clock.
+- The game probe waits for a stable splash plus two seconds before pressing Space: C-BIOS ignores a tap in roughly the first second after the splash appears, which the former "boot race" retry masked on every run.
+- Deployment header checks reject unexpected CSP directives and verify HSTS `includeSubDomains`, Referrer-Policy, COOP, CORP and the exact Permissions-Policy value.
+
+### Security
+
+- Moved the pinned pnpm from the deprecated 11.13.0 release to 11.27.0 and overrode transitive `sharp` to 0.35.4 (GHSA-rgj7-g3m4-5g8c, development tooling only).
 
 ## [0.2.1] — 2026-09-05
 
@@ -161,7 +182,10 @@ First public release.
 - Cloudflare response headers enforce CSP, HSTS, `nosniff`, frame denial, and immutable caching for hashed assets; CI actions are commit-pinned.
 - Reference photographs without redistribution licenses are excluded from the repository and fetched only for local comparison.
 
-[Unreleased]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta7...HEAD
+[Unreleased]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta7...v0.2.0
 [0.2.0-beta7]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta6...v0.2.0-beta7
 [0.2.0-beta6]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta5...v0.2.0-beta6
 [0.2.0-beta5]: https://github.com/mneves75/msx-expert-xp800/compare/v0.2.0-beta4...v0.2.0-beta5

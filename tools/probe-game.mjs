@@ -7,9 +7,11 @@
  * repetirem: (1) teclas vão por `interactions.tapKey` — um press() do host solta
  * a tecla antes de a varredura de matriz do MSX vê-la; (2) as métricas contam
  * "tinta" (pixels diferentes da cor modal do quadro), nunca luma absoluto — o
- * C-BIOS sem cartucho tem fundo claro e estoura qualquer limiar de brilho. O
- * boot também pode vencer a corrida contra a inserção (a máquina sobe sem o
- * cartucho), então o começo do jogo re-insere e tenta de novo em vez de assumir.
+ * C-BIOS sem cartucho tem fundo claro e estoura qualquer limiar de brilho; (3)
+ * medido em 2026-09-23: um toque no primeiro ~1 s depois de a splash aparecer não
+ * chega ao CHGET (o WebMSX recebe a tecla; segurá-la ou tocar após 2 s funciona).
+ * A sonda espera a splash estabilizar e mais 2 s; a nova tentativa é só rede de
+ * segurança e fica registrada no log.
  */
 import { launchBrowser, targetUrl } from './browser.mjs'
 
@@ -128,13 +130,20 @@ const check = (name, ok, detail) => {
   if (!ok) failures += 1
 }
 
-// 1. Splash do cartucho: texto sem paredes. O boot pode vencer a corrida contra a
-// inserção (C-BIOS sobe sem cartucho) — re-inserir é a recuperação, não um erro.
-let splash = await waitState('splash', (s) => ink(s) > 1500 && wallRows(s) === 0, 10_000)
+// 1. Splash do cartucho: texto sem paredes, estável entre duas leituras (impressão
+// concluída e CHGET já esperando). Re-inserir continua como recuperação.
+let lastInk = -1
+const splashReady = (s) => {
+  const stable = ink(s) === lastInk
+  lastInk = ink(s)
+  return ink(s) > 1500 && wallRows(s) === 0 && stable
+}
+let splash = await waitState('splash', splashReady, 10_000)
 if (splash === null) {
   console.log('  · splash não apareceu — re-inserindo o cartucho')
   await insert()
-  splash = await waitState('splash', (s) => ink(s) > 1500 && wallRows(s) === 0, 12_000)
+  lastInk = -1
+  splash = await waitState('splash', splashReady, 12_000)
 }
 check('splash do jogo visível', splash !== null, splash ? `ink=${ink(splash)}` : 'timeout')
 if (splash === null) {
@@ -142,8 +151,9 @@ if (splash === null) {
   process.exit(1)
 }
 
-// 2. Começar: espaço → campo com as paredes horizontais. Se a tela não transita,
-// o que estava visível não era a splash — re-insere e tenta mais uma vez.
+// 2. Começar: espaço → campo com as paredes horizontais, depois da janela em que o
+// C-BIOS ainda não registra teclas (ver cabeçalho). Se a tela não transita, tenta de novo.
+await page.waitForTimeout(2_000)
 await tap('Space')
 let field = await waitState('field', (s) => wallRows(s) >= 2, 4_000)
 if (field === null) {
