@@ -46,6 +46,8 @@ Inspired by [ps1-pi.vercel.app](https://ps1-pi.vercel.app/); built from scratch.
 | Joystick | Drag the stick; hold button A for fire/Space |
 | Wireframe / X-ray | `Alt+W` / `Alt+X` |
 | Reset view / auto-rotate | `Alt+V` / `Alt+G` |
+| Keyboard-only panel access | `Alt+P` focuses the controls (Tab moves between them); `Esc` returns typing to the MSX |
+| Hide / show the interface | `Alt+H` |
 
 The product UI is intentionally Brazilian Portuguese.
 

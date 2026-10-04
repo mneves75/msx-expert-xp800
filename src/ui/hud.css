@@ -303,6 +303,7 @@
 }
 
 .hud__note {
+  overflow-wrap: anywhere;
   margin: 0.6rem 0 0;
   padding-top: 0.55rem;
   border-top: 1px solid var(--hud-line-soft);
@@ -748,6 +749,7 @@
     color: var(--hud-ink);
     font-size: 0.75rem;
     line-height: 1.4;
+    overflow-wrap: anywhere;
     pointer-events: none;
   }
 

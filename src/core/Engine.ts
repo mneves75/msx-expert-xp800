@@ -332,7 +332,11 @@ export class Engine {
    * caminho de resize que o postprocessing atravessa sem reter viewport velho.
    */
   setAdaptivePixelRatioCap(limit: number | null): void {
-    this.adaptivePixelRatioCap = limit === null ? null : Math.max(0.25, limit)
+    const next = limit === null ? null : Math.max(0.25, limit)
+    // Mesmo teto efetivo (degraus 0–2, ou 3→4 já presos no piso) não redimensiona: o
+    // resize dispara callbacks que zeram a referência de cadência do AdaptiveQuality.
+    if (next === this.adaptivePixelRatioCap) return
+    this.adaptivePixelRatioCap = next
     this.handleResize()
   }
 

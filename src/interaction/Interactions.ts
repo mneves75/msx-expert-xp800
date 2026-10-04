@@ -176,6 +176,7 @@ const SHORTCUTS: readonly ShortcutHint[] = [
   { keys: 'Alt + W', description: 'Modo aramado' },
   { keys: 'Alt + X', description: 'Modo raio-X' },
   { keys: 'Alt + G', description: 'Rotação automática' },
+  { keys: 'Alt + P', description: 'Ir para o painel (Esc volta ao MSX)' },
 ]
 
 // ---------------------------------------------------------------------------

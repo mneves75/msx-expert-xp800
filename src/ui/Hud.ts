@@ -493,6 +493,16 @@ class Hud implements HudHandle {
 
   // ── Bottom sheet ────────────────────────────────────────────────────────────
 
+  /**
+   * Entrada só por teclado: o Tab pertence ao MSX (tecla TAB), então sem este atalho
+   * o seletor de cartucho e "Carregar ROM…" ficavam fora do alcance do teclado.
+   */
+  private focusPanel(): void {
+    if (!this.chromeVisible) this.setChromeVisible(true)
+    if (this.isMobile) this.onSheetOpen()
+    else this.powerButton.focus()
+  }
+
   private readonly onSheetOpen = (): void => {
     this.setSheet(true)
     this.sheetClose.focus()
@@ -562,6 +572,10 @@ class Hud implements HudHandle {
     const button = event.target.closest('button')
     if (button === null || button.closest('[role="dialog"]') !== null) return
     event.preventDefault()
+    // Um foco de teclado anterior (Tab, Alt+P) também sai: senão o clique o deixava
+    // no botão e o Espaço seguinte acionava o botão em vez de ir para o MSX.
+    const focused = document.activeElement
+    if (focused instanceof HTMLElement && this.element.contains(focused)) focused.blur()
   }
 
   private readonly onBreakpointChange = (): void => {
@@ -601,6 +615,18 @@ class Hud implements HudHandle {
       this.onSheetClose()
       return
     }
+    // Esc num controle do painel devolve o teclado ao MSX (par do Alt+P).
+    const focused = document.activeElement
+    if (
+      event.key === 'Escape' &&
+      !this.isMobile &&
+      focused instanceof HTMLElement &&
+      this.console.contains(focused)
+    ) {
+      event.preventDefault()
+      focused.blur()
+      return
+    }
     if (!event.altKey || event.ctrlKey || event.metaKey) return
 
     const handled = ((): boolean => {
@@ -631,6 +657,9 @@ class Hud implements HudHandle {
           return true
         case 'KeyH':
           this.setChromeVisible(!this.chromeVisible)
+          return true
+        case 'KeyP':
+          this.focusPanel()
           return true
         default:
           return false

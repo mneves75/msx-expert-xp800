@@ -8,15 +8,17 @@ Notable changes are documented here. The format follows [Keep a Changelog](https
 
 - Show external-emulator failures (offline CDN, SRI refusal, timeout, unreadable canvas) as HUD notes; an inserted cartridge no longer falls back to the internal BASIC without a reason.
 - Keep the screen-reader status region outside the hidden control console, so notes and state are announced with the mobile sheet closed and after Alt+H; a compact notice above the "Painel" button shows notes while the sheet is closed.
-- Stop HUD buttons from swallowing MSX typing: a mouse click no longer leaves the button focused, and a keyboard-focused button keeps only Space, Enter, Tab and Escape, so letters and digits still reach the machine.
+- Stop HUD buttons from swallowing MSX typing: a mouse click no longer leaves any HUD control focused, and a keyboard-focused button keeps only Space, Enter, Tab and Escape, so letters and digits still reach the machine.
+- Long unbroken notes (such as ROM file names) wrap inside the HUD instead of running off screen.
 - Refresh the desk's contact shadows while shadow casters move, so a cartridge inserted or ejected with the machine off no longer leaves a dark footprint behind.
-- Adaptive quality no longer resizes the renderer on steps that keep the resolution cap, which erased its best-cadence reference.
+- Adaptive quality no longer resizes the renderer on steps that keep the effective resolution cap (including two steps clamped to the same floor), which erased its best-cadence reference.
 - Release about 24 MiB of intermediate texture height fields once the surface maps are built.
 - Raise the boot message to 6.2:1 contrast and announce it; the WebGL2 failure uses an alert role.
 - Release the WebGL2 support-probe context immediately instead of holding a second live context.
 
 ### Added
 
+- `Alt+P` moves keyboard focus to the control panel and `Esc` returns typing to the MSX. Tab belongs to the MSX, so the cartridge picker and "Carregar ROM…" were previously unreachable without a pointer.
 - A procedural SVG favicon; browsers previously received the HTML shell for `/favicon.ico`.
 
 ### Changed
@@ -25,7 +27,7 @@ Notable changes are documented here. The format follows [Keep a Changelog](https
 - Verification tools use Playwright's own user agent instead of impersonating third-party crawlers.
 - `MSX_BROWSER_CHANNEL=chrome` runs the browser tools on installed Chrome when the bundled headless shell is unusable; CI keeps the bundled build.
 - `tools/probe-game.mjs <url>` now targets the given URL even when `MSX_URL` is exported, and prints the resolved target.
-- `tools/verify-prod.mjs` asserts that the declared icon is served as an image.
+- `tools/verify-prod.mjs` asserts that the declared icon is served as `image/svg+xml`.
 - Corrected SPEC §10: WebMSX is fetched on cartridge insertion, not on power-on.
 
 ### Security

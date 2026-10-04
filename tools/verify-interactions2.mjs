@@ -606,6 +606,15 @@ const closedSheetNote = await mobilePage.evaluate(async () => {
     overlapsToggle,
   }
 })
+const longNote = await mobilePage.evaluate(async () => {
+  window.__msx.interactions.setNote(`ROM “${'W'.repeat(100)}.rom” carregada no cartucho preto.`, false)
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  const toast = document.querySelector('.hud__toast')
+  const box = toast.getBoundingClientRect()
+  return { overflowX: toast.scrollWidth - toast.clientWidth, right: Math.round(box.right), width: innerWidth }
+})
+check('I26b', 'aviso longo sem espaços quebra dentro do toast',
+  longNote.overflowX <= 1 && longNote.right <= longNote.width, JSON.stringify(longNote))
 check('I26', 'folha fechada mostra e anuncia avisos sem cobrir o botão',
   closedSheetNote.announcer === null && closedSheetNote.announced && closedSheetNote.visible &&
     closedSheetNote.inViewport && !closedSheetNote.overlapsToggle,
@@ -643,6 +652,30 @@ check('I25', 'clique no botão do HUD não engole a digitação do MSX',
   typedAfterClick.power === true && ['Digit1', 'Space', 'KeyP'].every((code) => typedAfterClick.downs.includes(code)),
   JSON.stringify(typedAfterClick))
 
+// Mesmo caso com o botão JÁ focado por teclado antes do clique: o clique não pode
+// deixar esse foco para trás, senão o Espaço da linha BASIC desliga a máquina.
+await page.evaluate(() => window.__msx.interactions.setPower(false))
+await page.locator('.hud__btn--primary').focus()
+await page.click('.hud__btn--primary')
+await page.waitForFunction(() => window.__msx.interactions.screenRunning === true, null, { timeout: ANIMATION_TIMEOUT })
+await page.evaluate(() => {
+  const screen = window.__msx.interactions.screen
+  const original = screen.sendKey
+  window.__typedAfterFocusedClick = []
+  screen.sendKey = function (code, down) { window.__typedAfterFocusedClick.push([code, down]); return original.call(this, code, down) }
+  window.__restoreFocusedClick = () => { screen.sendKey = original }
+})
+await page.keyboard.type('1 P', { delay: 120 })
+await page.waitForTimeout(800)
+const typedAfterFocusedClick = await page.evaluate(() => {
+  window.__restoreFocusedClick()
+  const downs = window.__typedAfterFocusedClick.filter(([, down]) => down).map(([code]) => code)
+  return { power: window.__msx.interactions.getState().power.on, downs }
+})
+check('I25b', 'clique num botão já focado também devolve a digitação ao MSX',
+  typedAfterFocusedClick.power === true && ['Digit1', 'Space', 'KeyP'].every((code) => typedAfterFocusedClick.downs.includes(code)),
+  JSON.stringify(typedAfterFocusedClick))
+
 // Foco de teclado num botão (Tab) mantém Espaço/Enter no botão, mas letras e dígitos
 // seguem para o MSX — sem isso quem navega só por teclado não volta a digitar BASIC.
 await page.locator('.hud__btn--primary').focus()
@@ -670,6 +703,35 @@ check('I33', 'letras com foco de teclado num botão ainda chegam ao MSX',
     ['KeyP', 'Digit2'].every((code) => typedOnFocus.downs.includes(code)),
   JSON.stringify(typedOnFocus))
 await page.evaluate(() => document.activeElement?.blur?.())
+
+// Só teclado: Alt+P leva o foco ao painel, Tab percorre os controles e Esc devolve o
+// teclado ao MSX. Sem isso o seletor de cartucho e "Carregar ROM…" eram inalcançáveis.
+await page.evaluate(() => { document.activeElement?.blur?.(); window.__msx.interactions.setPower(true) })
+await page.waitForFunction(() => window.__msx.interactions.screenRunning === true, null, { timeout: ANIMATION_TIMEOUT })
+await page.keyboard.press('Alt+KeyP')
+const panelEntry = await page.evaluate(() => document.querySelector('.hud__console')?.contains(document.activeElement) ?? false)
+const firstControl = await page.evaluate(() => document.activeElement?.textContent ?? '')
+await page.keyboard.press('Tab')
+const tabMoved = await page.evaluate((first) =>
+  document.querySelector('.hud__console')?.contains(document.activeElement) === true &&
+  (document.activeElement?.textContent ?? '') !== first, firstControl)
+await page.keyboard.press('Escape')
+const escaped = await page.evaluate(() => document.activeElement === document.body)
+await page.evaluate(() => {
+  const screen = window.__msx.interactions.screen
+  const original = screen.sendKey
+  window.__typedAfterEscape = []
+  screen.sendKey = function (code, down) { window.__typedAfterEscape.push([code, down]); return original.call(this, code, down) }
+  window.__restoreEscape = () => { screen.sendKey = original }
+})
+await page.keyboard.press('KeyQ', { delay: 120 })
+await page.waitForTimeout(600)
+const afterEscape = await page.evaluate(() => {
+  window.__restoreEscape()
+  return window.__typedAfterEscape.some(([code, down]) => code === 'KeyQ' && down)
+})
+check('I34', 'Alt+P leva o teclado ao painel e Esc devolve ao MSX',
+  panelEntry && tabMoved && escaped && afterEscape, JSON.stringify({ panelEntry, tabMoved, escaped, afterEscape }))
 
 // Alt+H esconde o console (inert); o resumo para leitor de tela não pode ir junto.
 const hiddenChromeAnnouncer = await page.evaluate(() => {
@@ -740,7 +802,14 @@ const adaptiveResizes = await page.evaluate(() => {
   const step = (tier) => { resizes = 0; aq.lock(tier); return resizes }
   try {
     step(0)
-    return { toOne: step(1), toTwo: step(2), toThree: step(3), backToZero: step(0) }
+    const base = { toOne: step(1), toTwo: step(2), toThree: step(3), backToZero: step(0) }
+    // DPR já no piso de 0,25 (renderer por software): os degraus 3 e 4 pedem tetos
+    // diferentes que o Engine prende no mesmo 0,25 — não há resolução a mudar.
+    const restoreCeiling = engine.withPixelRatioCeiling(0.25)
+    try {
+      step(0)
+      return { ...base, clampedToThree: step(3), clampedToFour: step(4), clampedBack: step(0) }
+    } finally { restoreCeiling() }
   } finally {
     engine.resizeCallbacks.splice(engine.resizeCallbacks.indexOf(counter), 1)
     aq.lock(startTier)
@@ -749,7 +818,7 @@ const adaptiveResizes = await page.evaluate(() => {
 })
 check('I29', 'degrau adaptativo só redimensiona quando o teto muda',
   adaptiveResizes !== null && adaptiveResizes.toOne === 0 && adaptiveResizes.toTwo === 0 &&
-    adaptiveResizes.toThree > 0 && adaptiveResizes.backToZero > 0,
+    adaptiveResizes.toThree > 0 && adaptiveResizes.backToZero > 0 && adaptiveResizes.clampedToFour === 0,
   JSON.stringify(adaptiveResizes))
 
 // Corridas de cartucho, ROM local e modificadores: cada caso falhava no código anterior.

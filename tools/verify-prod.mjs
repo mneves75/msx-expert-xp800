@@ -67,7 +67,7 @@ const icon = await page.evaluate(async () => {
 })
 expect(
   'ícone declarado e servido como imagem',
-  icon.status === 200 && /^image\//.test(icon.type ?? ''),
+  icon.status === 200 && /^image\/svg\+xml\b/.test(icon.type ?? ''),
   JSON.stringify(icon),
 )
 
