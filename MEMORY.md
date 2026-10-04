@@ -6,11 +6,11 @@ Curated project decisions and measurements. Read this with the newest
 
 ## Current deployment
 
-Version **0.2.2** is deployed to production. Staging tag `v0.2.2-beta1` and
-production tag `v0.2.2` identify the same verified application commit,
-`71070c1e8732d457971dad02574c0bb346d9a676`. Linux CI and both live deployments passed;
-all nine public files match the final build byte for byte. Release evidence is in
-`memory/2026-09-23.md`.
+Version **0.2.3** is deployed to production. Staging tag `v0.2.3-beta1` and
+production tag `v0.2.3` identify the same verified application commit,
+`cee63c8e0a10ba779361a96af2da749357cf5654`. Linux CI and both live deployments passed;
+all ten public files match the final build byte for byte. Release evidence is in
+`memory/2026-10-04.md`.
 
 ## Product and architecture decisions
 
@@ -140,5 +140,9 @@ all nine public files match the final build byte for byte. Release evidence is i
 - A required render pipeline must fail closed. Silent direct-render fallbacks can publish
   a partial visual result as ready and make capture/deployment probes approve the wrong
   product.
+- A check can measure the wrong instance or the wrong mode. An import without Vite's
+  HMR `?t=` query loaded a second, empty texture module and reported 0 bytes; a resize
+  check passed on hardware but would fail under CI's fixed 0.25 software DPR. Plant the
+  defect back and run the software mode before trusting a new check.
 - Rewriting Git history does not immediately remove an orphaned object from GitHub's API.
   Sensitive material must never enter a published repository in the first place.
