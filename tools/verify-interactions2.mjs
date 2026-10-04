@@ -968,6 +968,9 @@ await noWebGl.addInitScript(() => {
   }
 })
 await noWebGl.goto(targetUrl(), { waitUntil: 'networkidle' })
+// O bootstrap pode ainda não ter chegado ao teste de suporte (renderer por software).
+await noWebGl.waitForFunction(() => document.querySelector('#boot p')?.getAttribute('role') === 'alert', null,
+  { timeout: ANIMATION_TIMEOUT }).catch(() => {})
 const bootMessage = await noWebGl.evaluate(() => {
   const paragraph = document.querySelector('#boot p')
   const veil = document.getElementById('boot')
