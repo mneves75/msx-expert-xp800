@@ -28,7 +28,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    host: true,
+    // Loopback by default: the dev server serves the whole project root, including
+    // untracked scratch folders. Use `pnpm dev --host` to test on a phone over the LAN.
     /**
      * Under `MSX_CAPTURE=1` the HMR error dialog is suppressed. It exists so a
      * stale overlay can never composite itself into a captured frame — which is

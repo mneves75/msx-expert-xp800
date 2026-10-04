@@ -34,8 +34,8 @@ import {
  *
  * ## The emulator
  *
- * `../emulator` is imported **on first power-on** and never before (SPEC §10 — the
- * emulator is lazy). What comes back is a single `ScreenPipeline`: it routes WebMSX
+ * `../emulator` (the app's own chunk) is imported **on first power-on** and never
+ * before (SPEC §10); WebMSX itself is fetched only when a cartridge is inserted (§9). What comes back is a single `ScreenPipeline`: it routes WebMSX
  * first and falls back to the procedural TMS9918 renderer — CDN blocked, SRI mismatch,
  * tainted canvas — behind a texture of stable identity, and runs the CRT pass (barrel,
  * shadow mask, scanlines, halation) over whichever one won. The HUD is told, in pt-BR,
@@ -145,8 +145,6 @@ declare global {
 // ---------------------------------------------------------------------------
 
 const TXT = {
-  emulatorFallback:
-    'Emulador WebMSX indisponível — a tela está no renderizador procedural.',
   emulatorMissing: 'Nenhuma fonte de vídeo encontrada — a tela fica apagada.',
   emulatorStarting: 'A tela ainda está iniciando — tente novamente em instantes.',
   cartridgeBusy: 'Este cartucho já está no outro compartimento.',
@@ -370,10 +368,16 @@ const SWALLOW: ReadonlySet<string> = new Set([
   'F5',
 ])
 
-function isBrowserControl(target: EventTarget | null): boolean {
+/** Teclas que um botão ou link focado usa nativamente (acionar, navegar, fechar). */
+const CONTROL_KEYS: ReadonlySet<string> = new Set(['Space', 'Enter', 'NumpadEnter', 'Tab', 'Escape'])
+
+function isBrowserControl(target: EventTarget | null, code: string): boolean {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true
-  return target.closest('input, textarea, select, button, a, [role="dialog"]') !== null
+  if (target.closest('input, textarea, select, [role="dialog"]') !== null) return true
+  // Um botão focado (Tab) só reclama as próprias teclas: letras e dígitos seguem para o
+  // MSX, senão quem navega por teclado nunca volta a digitar BASIC.
+  return target.closest('button, a') !== null && CONTROL_KEYS.has(code)
 }
 
 // ---------------------------------------------------------------------------
@@ -1195,7 +1199,11 @@ class Interactions implements InteractionsModule {
   }
 
   private async resolveScreen(generation: number, signal: AbortSignal): Promise<void> {
-    const source = await loadScreenSource(this.ctx)
+    // Falhas do WebMSX (CDN, SRI, tempo, canvas) e do tubo chegam como avisos; sem
+    // isto o HUD mostrava "MSX BASIC · interno" com um cartucho inserido, sem motivo.
+    const source = await loadScreenSource(this.ctx, (message) => {
+      if (!this.disposed && this.screen === source) this.setNote(message, true)
+    })
     if (source === null) {
       if (this.screenIsCurrent(generation, signal)) this.setNote(TXT.emulatorMissing, true)
       return
@@ -1884,7 +1892,7 @@ class Interactions implements InteractionsModule {
         return
       }
     }
-    if (isBrowserControl(event.target)) return
+    if (isBrowserControl(event.target, event.code)) return
     if (event.ctrlKey || event.metaKey) return
 
     // Alt is the shortcut namespace (and L GRA / R GRA on the MSX, which still pass).
@@ -2177,12 +2185,15 @@ const cartridgeNames = new Map<string, string>()
  * The import is dynamic so the emulator chunk is fetched on first power-on and never at
  * page load (SPEC §10).
  */
-async function loadScreenSource(ctx: ModuleContext): Promise<ScreenPipeline | null> {
+async function loadScreenSource(
+  ctx: ModuleContext,
+  onNotice: (message: string) => void,
+): Promise<ScreenPipeline | null> {
   try {
     const { ScreenPipeline } = await import('../emulator/index.ts')
     // Slots vazios ficam no BASIC procedural; o WebMSX entra quando há cartucho.
     // Sem isto o C-BIOS abre em "No cartridge found" e o teclado não faz nada.
-    return new ScreenPipeline({ renderer: ctx.renderer, webMsxNeedsCartridge: true })
+    return new ScreenPipeline({ renderer: ctx.renderer, webMsxNeedsCartridge: true, onNotice })
   } catch (error) {
     console.error('[Interactions] o módulo de vídeo falhou ao importar:', error)
     return null

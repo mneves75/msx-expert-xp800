@@ -7,18 +7,33 @@ export function launchBrowser(extraArgs = []) {
   const platformArgs = process.platform === 'darwin'
     ? ['--use-gl=angle', '--use-angle=metal']
     : []
-  return chromium.launch({ args: [
+  // Opt-in for hosts where the bundled headless shell is unusable (e.g. `chrome`).
+  // CI keeps the bundled build, which remains the authoritative gate.
+  const channel = process.env.MSX_BROWSER_CHANNEL?.trim() || undefined
+  if (channel) console.log(`Browser channel: ${channel} (MSX_BROWSER_CHANNEL)`)
+  return chromium.launch({ ...(channel ? { channel } : {}), args: [
     ...platformArgs,
     '--enable-gpu',
-    '--user-agent=OpenAI File Downloader, XaiImageApiFetch/1.0',
     ...extraArgs,
   ] })
 }
 
-/** All local tools accept --url or MSX_URL; the managed runner sets MSX_URL. */
-export function targetUrl(fallback = 'http://127.0.0.1:5173/') {
+/**
+ * Checks that open a raw Vite module (no HTML, so no declared icon) make full Chrome
+ * request /favicon.ico; that 404 is harness noise, not an application error.
+ */
+export function isFaviconRequestError(message) {
+  const path = new URL(message.location().url || 'about:blank', 'http://x').pathname
+  return message.type() === 'error' && path === '/favicon.ico' && /\b404\b/.test(message.text())
+}
+
+/**
+ * All local tools accept --url or MSX_URL; the managed runner sets MSX_URL. An explicit
+ * `override` (a tool's positional URL) wins over both.
+ */
+export function targetUrl(fallback = 'http://127.0.0.1:5173/', override = undefined) {
   const index = process.argv.indexOf('--url')
-  const raw = index === -1 ? process.env.MSX_URL ?? fallback : process.argv[index + 1]
+  const raw = override ?? (index === -1 ? process.env.MSX_URL ?? fallback : process.argv[index + 1])
   if (!raw || raw.startsWith('--')) throw new Error('--url requires an HTTP(S) URL')
   const url = new URL(raw)
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Expected an HTTP(S) URL')

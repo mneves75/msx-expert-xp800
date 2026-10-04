@@ -85,6 +85,9 @@ pnpm verify:online                 # separate real CDN emulator/game integration
 `MSX_URL=http://127.0.0.1:5174`. Each checkout needs its own node_modules and scratch
 outputs; share the pnpm store, never a running server. Create a worktree only when the
 user asks. Never terminate another checkout's listener to free your preferred port.
+`pnpm dev` binds loopback only; `pnpm dev --host` exposes it on the LAN for phone tests.
+If the bundled Playwright headless shell is unusable on a host, `MSX_BROWSER_CHANNEL=chrome`
+runs every tool on installed Chrome. CI's bundled build remains the authoritative gate.
 
 CI runs `MSX_SOFTWARE_RENDERER=1 pnpm verify:all` to reproduce SwiftShader locally.
 Functional interaction checks retain both CSS viewports and the real rendering pipeline,
@@ -121,7 +124,7 @@ Source inspection cannot judge this project. Use the tool whose trigger matches:
 | Exposure, lighting, or tone mapping | `node tools/tune-exposure.mjs` and `node tools/tune-case.mjs` | Clean surface RGB and local photo contrast, with the CRT off; screenshots/JSON in `.scratch/calibration/` |
 | The deployed site | `node tools/verify-prod.mjs [url]` | Asserts CSP/HSTS/nosniff/X-Frame-Options on the real response, then that the emulator loads under that CSP, the tube warms, and a cartridge inserts — exiting non-zero on any failure |
 | Frame cost, draw calls, pass cost, CPU hotspots | `node tools/profile.mjs --label <name> [--width N --height N --dpr N]` | rAF frame times (vsync and the app presentation cap off), effective DPR/drawing buffer, host load, per-pass A/B in interleaved rounds, draw-call counters (with/without frozen shadows), CDP CPU profile → `.scratch/profile/<name>.json`. Compare labels before claiming a perf win |
-| The Super Cósmico game ROM, key input into the emulator | `node tools/probe-game.mjs [url]` | Plays the game on the real WebMSX reading canvas pixels: splash → field → autonomous movement → wall death freezes with the field intact → key restart. Needs the CDN |
+| The Super Cósmico game ROM, key input into the emulator | `node tools/probe-game.mjs [url]` (the argument beats `MSX_URL`) | Plays the game on the real WebMSX reading canvas pixels: splash → field → autonomous movement → wall death freezes with the field intact → key restart. Needs the CDN |
 
 The dev server runs on :5173 (`pnpm dev`). The page exposes `window.__msxReady`,
 `window.__msxCamera(pose)`, and `window.__msx.{interactions,postFX,cameraRig,…}` — the

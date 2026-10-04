@@ -323,7 +323,8 @@ flap swing with gravity, cable catenary sag on the keyboard cable and AC cord.
 - Draw calls < 150. Instance the keycaps.
 - Triangles < 900 k.
 - Texture memory < 256 MB. Procedural/canvas-generated maps preferred over downloads.
-- Lazy-load the emulator only on power-on.
+- Lazy-load the app's emulator chunk on first power-on; fetch WebMSX only when a
+  cartridge is inserted (§9).
 - Full asset budget < 3 MB gzipped, excluding the hotlinked emulator.
 
 Presentation is capped at approximately **60 Hz**, independent of 120/144 Hz display

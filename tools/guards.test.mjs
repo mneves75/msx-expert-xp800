@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { checkDeploymentHeaders } from './deployment-headers.mjs'
 import { assertScreenEvidence, CaptureAbort } from './capture-guard.mjs'
+import { targetUrl } from './browser.mjs'
 
 const headerText = readFileSync(new URL('../public/_headers', import.meta.url), 'utf8')
 const headers = Object.fromEntries([...headerText.matchAll(/^  ([\w-]+): (.+)$/gm)]
@@ -57,4 +58,19 @@ test('screen evidence requires a real visible subject, not just a healthy page',
   assert.throws(() => assertScreenEvidence({ ...lit, mean: NaN }, options), CaptureAbort)
   assert.equal(assertScreenEvidence(null, { ...options, enabled: false }), false)
   assert.equal(assertScreenEvidence({ ...lit, coverage: 0.01 }, { ...options, required: false }), false)
+})
+
+test('an explicit target URL beats an exported MSX_URL', () => {
+  const previous = process.env.MSX_URL
+  process.env.MSX_URL = 'http://127.0.0.1:5174/'
+  try {
+    // Release checks run `probe-game.mjs <staging>`; testing the local server instead
+    // would approve the wrong deployment.
+    assert.equal(targetUrl(undefined, 'https://staging.example/'), 'https://staging.example/')
+    assert.equal(targetUrl(), 'http://127.0.0.1:5174/')
+    assert.throws(() => targetUrl(undefined, 'file:///etc/hosts'))
+  } finally {
+    if (previous === undefined) delete process.env.MSX_URL
+    else process.env.MSX_URL = previous
+  }
 })

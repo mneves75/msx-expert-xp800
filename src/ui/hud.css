@@ -319,6 +319,11 @@
   display: none;
 }
 
+/* Aviso fora do console: só existe com a folha mobile fechada (ver a media query). */
+.hud__toast {
+  display: none;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    Controles
    ───────────────────────────────────────────────────────────────────────────── */
@@ -725,6 +730,35 @@
 
   .hud__sheet-toggle {
     display: inline-flex;
+  }
+
+  /* Acima da linha do botão da folha, nunca sobre ele (WCAG 2.4.11). */
+  .hud__toast {
+    display: block;
+    position: absolute;
+    left: var(--hud-inset-left);
+    right: var(--hud-inset-right);
+    bottom: calc(0.875rem + env(safe-area-inset-bottom, 0px) + 2.75rem + 0.5rem);
+    margin: 0 auto;
+    max-width: 40rem;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--hud-line-strong);
+    border-radius: 10px;
+    background: var(--hud-sheet);
+    color: var(--hud-ink);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    pointer-events: none;
+  }
+
+  .hud__toast[data-tone='alert'] {
+    color: var(--hud-alert);
+  }
+
+  .hud__toast[hidden],
+  .hud[data-sheet='open'] .hud__toast,
+  .hud[data-chrome='hidden'] .hud__toast {
+    display: none;
   }
 
   .hud__sheet-head {

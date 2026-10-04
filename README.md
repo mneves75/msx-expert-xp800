@@ -57,7 +57,8 @@ Requirements: Node 22 or newer and pnpm 11. Run Wrangler under Node, never Bun.
 pnpm install --frozen-lockfile
 pnpm setup:hooks  # enable the blocking ast-grep commit hook
 pnpm exec playwright install chromium
-pnpm dev          # http://localhost:5173
+pnpm dev          # http://localhost:5173 (loopback only)
+pnpm dev --host   # same server, reachable from a phone on your LAN
 pnpm verify       # ast-grep + TypeScript
 pnpm verify:all   # build + offline browser checks on an owned free port
 pnpm verify:online # real CDN emulator and game checks
@@ -83,14 +84,16 @@ node tools/tune-exposure.mjs          # clean key faces/shell at several exposur
 node tools/tune-case.mjs              # clean console/shell contrast with photo provenance
 node tools/profile.mjs --label base   # frames, passes, draw calls, CPU, and host load
 node tools/profile.mjs --width 390 --height 844 --dpr 3 --label mobile
-node tools/probe-game.mjs             # plays Super Cósmico through keyboard and 3D joystick
+node tools/probe-game.mjs [url]       # plays Super Cósmico; a URL argument beats MSX_URL
 node tools/verify-prod.mjs <url>       # headers, exact CSP behavior, emulator, and cartridge flow
 ```
 
 See [`AGENTS.md`](AGENTS.md) for the complete trigger table. Open visual captures and
 compare them with `reference/raw/`; a generated image that nobody inspected is not proof.
 For separate checkouts, use a distinct server port with `--strictPort` and set `MSX_URL`
-for the tools. Offline verification blocks the CDN deliberately; online verification
+for the tools. If the bundled Playwright headless shell is unusable on your machine, set
+`MSX_BROWSER_CHANNEL=chrome` to run the tools on installed Chrome; CI keeps the bundled
+build. Offline verification blocks the CDN deliberately; online verification
 requires actual emulator promotion and game behavior and fails if either is unavailable.
 
 ## Deploying your own

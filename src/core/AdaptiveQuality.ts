@@ -94,6 +94,8 @@ export function createAdaptiveQuality(
    * reduzir carga nenhuma). Reamostrado a cada entrada vinda de tier ≤ 2.
    */
   let resolutionBase: number | null = null
+  /** Último teto entregue ao Engine; só um teto novo justifica um resize. */
+  let appliedCap: number | null = null
 
   function applyTier(next: AdaptiveTier): void {
     if (next >= 3 && resolutionBase === null) resolutionBase = engine.renderer.getPixelRatio()
@@ -105,7 +107,12 @@ export function createAdaptiveQuality(
     // mudanças de tela depois disso — quem arrasta a janela para outro monitor no
     // meio de uma sessão já degradada fica com o teto antigo até recarregar.
     const base = resolutionBase ?? engine.renderer.getPixelRatio()
-    engine.setAdaptivePixelRatioCap(next >= 3 ? base * (next === 3 ? 0.75 : 0.5) : null)
+    const cap = next >= 3 ? base * (next === 3 ? 0.75 : 0.5) : null
+    // Os degraus 0–2 não mexem na resolução. Um resize redundante disparava o callback
+    // abaixo, que zera `sessionFloorMs` — a escada perdia a melhor cadência da sessão.
+    if (cap === appliedCap) return
+    appliedCap = cap
+    engine.setAdaptivePixelRatioCap(cap)
   }
 
   function reset(discardNext: number): void {

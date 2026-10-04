@@ -1,4 +1,4 @@
-import { launchBrowser, targetUrl } from './browser.mjs'
+import { isFaviconRequestError, launchBrowser, targetUrl } from './browser.mjs'
 
 const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
@@ -6,7 +6,7 @@ const errors = []
 
 page.on('pageerror', (error) => errors.push(String(error)))
 page.on('console', (message) => {
-  if (message.type() === 'error') errors.push(message.text())
+  if (message.type() === 'error' && !isFaviconRequestError(message)) errors.push(message.text())
 })
 
 try {

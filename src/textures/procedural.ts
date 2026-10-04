@@ -367,6 +367,21 @@ function* memoSteps<T>(key: string, build: () => Generator<void, T>): Generator<
   return made
 }
 
+/**
+ * Descarta os height fields intermediários. As superfícies prontas continuam no cache
+ * de texturas; só uma superfície com spec inédita pagaria o recálculo dos campos.
+ */
+export function releaseSurfaceFields(): void {
+  fieldCache.clear()
+}
+
+/** Bytes dos height fields intermediários ainda retidos (diagnóstico do harness). */
+export function retainedFieldBytes(): number {
+  let bytes = 0
+  for (const field of fieldCache.values()) bytes += field.data.byteLength
+  return bytes
+}
+
 /** Libera todas as texturas procedurais em cache. */
 export function disposeTextureCache(): void {
   for (const value of cache.values()) disposeValue(value)

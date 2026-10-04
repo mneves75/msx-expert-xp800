@@ -15,7 +15,7 @@
  *   node tools/verify-textures.mjs --write         # regrava a linha de base (mudança deliberada)
  *   node tools/verify-textures.mjs --url http://localhost:5173
  */
-import { launchBrowser, targetUrl } from './browser.mjs'
+import { isFaviconRequestError, launchBrowser, targetUrl } from './browser.mjs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,7 +30,7 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors = []
 page.on('pageerror', (error) => errors.push(String(error)))
 page.on('console', (message) => {
-  if (message.type() === 'error') errors.push(message.text())
+  if (message.type() === 'error' && !isFaviconRequestError(message)) errors.push(message.text())
 })
 
 try {

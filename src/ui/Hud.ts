@@ -189,6 +189,7 @@ class Hud implements HudHandle {
   private readonly displayValue: HTMLElement
   private readonly emulatorValue: HTMLElement
   private readonly noteNode: HTMLElement
+  private readonly toast: HTMLElement
   private readonly announcer: HTMLElement
   private readonly powerButton: HTMLButtonElement
   private readonly slotControls: Readonly<Record<SlotId, SlotControls>>
@@ -274,7 +275,7 @@ class Hud implements HudHandle {
     readouts.append(powerRow.row, slotARow.row, slotBRow.row, displayRow.row, emulatorRow.row)
     this.noteNode = el('p', 'hud__note')
     this.noteNode.hidden = true
-    statusGroup.body.append(readouts, this.noteNode, this.announcer)
+    statusGroup.body.append(readouts, this.noteNode)
     left.appendChild(statusGroup.section)
 
     // ── Grupo: energia + sistema ──────────────────────────────────────────────
@@ -399,6 +400,12 @@ class Hud implements HudHandle {
     this.sheetToggle.appendChild(this.sheetToggleState)
     root.appendChild(this.sheetToggle)
 
+    // Fora do console: ele fica inert (folha fechada, Alt+H) e levaria junto a região
+    // viva e os avisos disparados pela cena. O toast só aparece com a folha fechada.
+    this.toast = el('p', 'hud__toast')
+    this.toast.hidden = true
+    root.append(this.toast, this.announcer)
+
     // ── Eventos ───────────────────────────────────────────────────────────────
     this.powerButton.addEventListener('click', this.onPowerClick)
     resetButton.addEventListener('click', this.onResetClick)
@@ -410,6 +417,7 @@ class Hud implements HudHandle {
     this.sheetClose.addEventListener('click', this.onSheetClose)
     sheetBackdrop.addEventListener('click', this.onSheetClose)
     sheetHead.addEventListener('pointerdown', this.onSheetDragStart)
+    root.addEventListener('mousedown', this.onButtonMouseDown)
 
     window.addEventListener('keydown', this.onKeyDown, { capture: true })
     window.addEventListener('pointerup', this.onSheetDragEnd)
@@ -542,6 +550,18 @@ class Hud implements HudHandle {
     // Fora da tela ⇒ fora da ordem de tabulação.
     this.console.toggleAttribute('inert', this.chromeVisible ? mobile && !this.sheetOpen : true)
     setAttr(this.sheetToggle, 'aria-expanded', this.sheetOpen ? 'true' : 'false')
+  }
+
+  /**
+   * Clique de mouse foca o botão (Chrome/Firefox). Focado, ele engolia a digitação do
+   * MSX e o próximo Espaço — comum numa linha BASIC — acionava o botão de novo. O
+   * clique ainda dispara; o teclado e o foco programático da folha modal ficam intactos.
+   */
+  private readonly onButtonMouseDown = (event: MouseEvent): void => {
+    if (!(event.target instanceof Element)) return
+    const button = event.target.closest('button')
+    if (button === null || button.closest('[role="dialog"]') !== null) return
+    event.preventDefault()
   }
 
   private readonly onBreakpointChange = (): void => {
@@ -718,13 +738,15 @@ class Hud implements HudHandle {
     setAttr(this.xrayButton, 'aria-pressed', this.state.xray ? 'true' : 'false')
     setAttr(this.autoRotateButton, 'aria-pressed', this.state.autoRotate ? 'true' : 'false')
 
-    if (this.state.note === null) {
-      this.noteNode.hidden = true
-      setText(this.noteNode, '')
-    } else {
-      this.noteNode.hidden = false
-      setText(this.noteNode, this.state.note)
-      setAttr(this.noteNode, 'data-tone', this.state.error === undefined ? 'info' : 'alert')
+    for (const node of [this.noteNode, this.toast]) {
+      if (this.state.note === null) {
+        node.hidden = true
+        setText(node, '')
+      } else {
+        node.hidden = false
+        setText(node, this.state.note)
+        setAttr(node, 'data-tone', this.state.error === undefined ? 'info' : 'alert')
+      }
     }
 
     setText(this.sheetToggleState, this.powerLabel())

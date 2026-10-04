@@ -2,6 +2,36 @@
 
 Notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [0.2.3] — 2026-10-03
+
+### Fixed
+
+- Show external-emulator failures (offline CDN, SRI refusal, timeout, unreadable canvas) as HUD notes; an inserted cartridge no longer falls back to the internal BASIC without a reason.
+- Keep the screen-reader status region outside the hidden control console, so notes and state are announced with the mobile sheet closed and after Alt+H; a compact notice above the "Painel" button shows notes while the sheet is closed.
+- Stop HUD buttons from swallowing MSX typing: a mouse click no longer leaves the button focused, and a keyboard-focused button keeps only Space, Enter, Tab and Escape, so letters and digits still reach the machine.
+- Refresh the desk's contact shadows while shadow casters move, so a cartridge inserted or ejected with the machine off no longer leaves a dark footprint behind.
+- Adaptive quality no longer resizes the renderer on steps that keep the resolution cap, which erased its best-cadence reference.
+- Release about 24 MiB of intermediate texture height fields once the surface maps are built.
+- Raise the boot message to 6.2:1 contrast and announce it; the WebGL2 failure uses an alert role.
+- Release the WebGL2 support-probe context immediately instead of holding a second live context.
+
+### Added
+
+- A procedural SVG favicon; browsers previously received the HTML shell for `/favicon.ico`.
+
+### Changed
+
+- `pnpm dev` binds loopback only; use `pnpm dev --host` to test on a phone over the LAN.
+- Verification tools use Playwright's own user agent instead of impersonating third-party crawlers.
+- `MSX_BROWSER_CHANNEL=chrome` runs the browser tools on installed Chrome when the bundled headless shell is unusable; CI keeps the bundled build.
+- `tools/probe-game.mjs <url>` now targets the given URL even when `MSX_URL` is exported, and prints the resolved target.
+- `tools/verify-prod.mjs` asserts that the declared icon is served as an image.
+- Corrected SPEC §10: WebMSX is fetched on cartridge insertion, not on power-on.
+
+### Security
+
+- Overrode transitive `undici` to 7.29.1 (wrangler → miniflare, development tooling only), clearing ten advisories that turned `pnpm audit` red.
+
 ## [0.2.2] — 2026-09-23
 
 ### Fixed

@@ -15,6 +15,7 @@ import { joystick } from './models/Joystick'
 import { createInteractions, type InteractionsModule } from './interaction/Interactions'
 import { createHud, type HudHandle } from './ui/Hud'
 import { afterFirstPaint, yieldToMain } from './core/cooperative'
+import { retainedFieldBytes } from './textures/procedural'
 
 /**
  * Bootstrap.
@@ -60,6 +61,8 @@ declare global {
       readonly adaptiveQuality: AdaptiveQualityHandle | null
       /** Re-exported so tooling can measure the scene without a second three.js copy. */
       readonly three: typeof THREE
+      /** Bytes of intermediate texture height fields still held (0 after prewarm). */
+      readonly retainedFieldBytes: () => number
     }
   }
 }
@@ -76,7 +79,10 @@ function hideBootVeil(): void {
 function showBootMessage(message: string): void {
   const veil = document.getElementById('boot')
   const paragraph = veil?.querySelector('p')
-  if (paragraph) paragraph.textContent = message
+  if (!paragraph) return
+  // Só falhas chegam aqui: o papel muda antes do texto para o leitor anunciar já.
+  paragraph.setAttribute('role', 'alert')
+  paragraph.textContent = message
 }
 
 // ─── Registration ────────────────────────────────────────────────────────────────
@@ -528,6 +534,7 @@ async function bootstrap(): Promise<void> {
       postFX,
       adaptiveQuality,
       three: THREE,
+      retainedFieldBytes,
     }
 
     engine.onReady(() => {

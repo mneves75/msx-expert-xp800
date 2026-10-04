@@ -15,7 +15,8 @@
  */
 import { launchBrowser, targetUrl } from './browser.mjs'
 
-const URL_ = targetUrl(process.argv[2]?.startsWith('http') ? process.argv[2] : undefined)
+const URL_ = targetUrl(undefined, process.argv[2]?.startsWith('http') ? process.argv[2] : undefined)
+console.log(`Alvo: ${URL_}`)
 
 const browser = await launchBrowser(['--ignore-gpu-blocklist'])
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })

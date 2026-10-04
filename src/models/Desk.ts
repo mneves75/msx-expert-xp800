@@ -913,8 +913,16 @@ class StudioDesk implements DeskModule {
 
     // As pegadas só mudam quando alguém insere um cartucho ou move o joystick — mas o
     // módulo da mesa constrói antes de todos os outros, então a primeira leitura tem
-    // de esperar a cena existir.
-    if (this.frame === 8 || (this.frame > 8 && this.frame % CONTACT_REFRESH === 0)) {
+    // de esperar a cena existir. Quem move geometria projetora levanta o flag de sombra
+    // neste mesmo quadro (contrato de types.ts): com a máquina desligada a cena dorme
+    // ao fim da animação e a cadência de 240 quadros deixava a pegada velha na mesa.
+    // A releitura custa ~0,06 ms.
+    const castersMoved = this.renderer?.shadowMap.needsUpdate === true
+    if (
+      castersMoved ||
+      this.frame === 8 ||
+      (this.frame > 8 && this.frame % CONTACT_REFRESH === 0)
+    ) {
       this.refreshContacts()
     }
 
@@ -922,7 +930,7 @@ class StudioDesk implements DeskModule {
     if (due) this.renderReflection()
   }
 
-  /** Força uma releitura das pegadas no próximo frame (após inserir/remover peças). */
+  /** Relê as pegadas agora (harness e chamadores externos). */
   invalidateContacts(): void {
     this.refreshContacts()
   }

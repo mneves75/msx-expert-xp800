@@ -22,6 +22,7 @@ import {
   disposeTextureCache,
   microScratches,
   microScratchesAsync,
+  releaseSurfaceFields,
   setDefaultAnisotropy,
   type SurfaceMaps,
   type SurfaceOptions,
@@ -218,6 +219,8 @@ export function createMaterialLibrary(renderer: THREE.WebGLRenderer): ManagedMat
       if (disposed) return
       keycapMapsCache ??= await caseSurfaceMapsAsync(KEYCAP_SPEC)
       if (disposed) return
+      // CASE e KEYCAP são os únicos consumidores dos campos 1024² (~24 MiB de heap).
+      releaseSurfaceFields()
       // Popula o memo usado por `metal()` — mesma chamada, mesma chave.
       await microScratchesAsync(1024, 0.7)
     },

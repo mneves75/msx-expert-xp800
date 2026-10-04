@@ -24,7 +24,8 @@ constraints.
 pnpm install --frozen-lockfile
 pnpm setup:hooks
 pnpm exec playwright install chromium
-pnpm dev                               # http://localhost:5173
+pnpm dev                               # http://localhost:5173 (loopback only)
+pnpm dev --host                        # reachable from a phone on your LAN
 pnpm verify:all                         # owned server, build and offline browser QA
 pnpm verify:online                      # requires the real CDN emulator/game
 node tools/verify-interactions2.mjs   # live hardware, input and HUD behavior

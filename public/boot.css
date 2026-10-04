@@ -59,7 +59,8 @@ canvas {
 }
 
 #boot p {
-  color: #6b6a66;
+  /* 6,2:1 sobre o véu (AA); o mesmo texto carrega a falha fatal de WebGL2. */
+  color: #918f86;
   font-size: 13px;
   letter-spacing: 0.14em;
   text-transform: uppercase;

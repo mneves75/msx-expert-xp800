@@ -225,6 +225,7 @@ const out = await page.evaluate(async ({ offline, animationTimeout }) => {
   await until(() => offline ? itx.screen.fallbackReason !== null : S().emulator === 'webmsx',
     offline ? 'blocked CDN activates fallback' : 'real WebMSX promotion')
   o.promoted = S().emulator === 'webmsx'
+  o.fallbackNote = S().note
   o.fallbackWithCartridge = S().emulator === 'procedural' && S().slotA !== null
   itx.ejectCartridge('A')
   await until(() => itx.slots.get('A').phase === 'vazio' && S().emulator === 'procedural',
@@ -324,6 +325,7 @@ check('I4b', 'ejetar cartucho A reflete no estado', out.slotAAfterEject === null
 // verde assim seria uma verificação que não aconteceu. CDN fora do ar = falha honesta.
 if (OFFLINE) {
   check('I4offline', 'CDN bloqueada mantém fallback utilizável e ejeção limpa', blockedCdn > 0 && out.fallbackWithCartridge && !out.promoted && out.emulatorAfterEject === 'procedural' && Array.isArray(out.ghostSlots) && out.ghostSlots.length === 0, `requisições bloqueadas=${blockedCdn}`)
+  check('I24', 'falha do WebMSX vira aviso no HUD', /emulador interno/.test(out.fallbackNote ?? ''), JSON.stringify(out.fallbackNote))
 } else {
   check('I4c', 'ejetar o último cartucho volta do WebMSX ao BASIC sem cartucho-fantasma', out.promoted === true && out.emulatorAfterEject === 'procedural' && Array.isArray(out.ghostSlots) && out.ghostSlots.length === 0, `webmsx exercitado=${out.promoted} slots internos=${JSON.stringify(out.ghostSlots)}`)
 }
@@ -464,8 +466,24 @@ const mobilePage = await browser.newPage({
   hasTouch: true,
 })
 collectErrors(mobilePage)
+await mobilePage.addInitScript(() => {
+  const original = HTMLCanvasElement.prototype.getContext
+  window.__webgl2Contexts = []
+  HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+    const context = original.call(this, type, ...rest)
+    if (type === 'webgl2' && context && !window.__webgl2Contexts.includes(context)) window.__webgl2Contexts.push(context)
+    return context
+  }
+})
 await mobilePage.goto(targetUrl(), { waitUntil: 'networkidle' })
 await mobilePage.waitForFunction(() => window.__msxReady === true, null, { timeout: 60_000 })
+// O teste de suporte a WebGL2 abria um contexto que ficava vivo até o GC; navegadores
+// limitam contextos simultâneos e descartam o mais antigo — que pode ser o da cena.
+const liveContexts = await mobilePage.evaluate(() => ({
+  created: window.__webgl2Contexts.length,
+  live: window.__webgl2Contexts.filter((context) => !context.isContextLost()).length,
+}))
+check('I32', 'só o contexto WebGL2 da cena continua vivo após o boot', liveContexts.live === 1, JSON.stringify(liveContexts))
 if (SOFTWARE) await mobilePage.evaluate(() => window.__msx.engine.capPixelRatio(0.25))
 await mobilePage.click('.hud__sheet-toggle')
 await mobilePage.waitForFunction(() => {
@@ -558,6 +576,40 @@ await mobilePage.keyboard.press('Escape')
 check('I11f', 'Escape fecha e restaura o foco', await mobilePage.evaluate(() =>
   document.querySelector('.hud')?.getAttribute('data-sheet') === 'closed' &&
   document.activeElement?.matches('.hud__sheet-toggle')))
+// Com a folha fechada, avisos disparados pela cena (slot ocupado, cartucho recusado)
+// precisam ser vistos e anunciados — o console está inert e fora da tela.
+const closedSheetNote = await mobilePage.evaluate(async () => {
+  const blockedBy = (element) => {
+    for (let node = element; node; node = node.parentElement) {
+      if (node.hasAttribute('inert')) return 'inert'
+      const style = getComputedStyle(node)
+      if (style.visibility === 'hidden' || style.display === 'none') return 'hidden'
+    }
+    return null
+  }
+  const text = 'Aviso de verificação.'
+  window.__msx.interactions.setNote(text, false)
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  const sr = document.querySelector('.hud [role="status"]')
+  const toast = document.querySelector('.hud__toast')
+  const visible = toast !== null && toast.textContent === text && blockedBy(toast) === null &&
+    toast.getBoundingClientRect().height > 0 ? toast : undefined
+  const box = visible?.getBoundingClientRect()
+  const toggle = document.querySelector('.hud__sheet-toggle').getBoundingClientRect()
+  const overlapsToggle = box !== undefined && box.left < toggle.right && box.right > toggle.left &&
+    box.top < toggle.bottom && box.bottom > toggle.top
+  return {
+    announcer: sr === null ? 'ausente' : blockedBy(sr),
+    announced: sr?.textContent.startsWith(text) ?? false,
+    visible: visible !== undefined,
+    inViewport: box !== undefined && box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth,
+    overlapsToggle,
+  }
+})
+check('I26', 'folha fechada mostra e anuncia avisos sem cobrir o botão',
+  closedSheetNote.announcer === null && closedSheetNote.announced && closedSheetNote.visible &&
+    closedSheetNote.inViewport && !closedSheetNote.overlapsToggle,
+  JSON.stringify(closedSheetNote))
 await mobilePage.close()
 
 // Native buttons own Space/Enter; the emulator must not consume those strokes.
@@ -567,6 +619,138 @@ await page.keyboard.press('Space')
 const powerAfterKeyboardClick = await page.evaluate(() => window.__msx.interactions.getState().power.on)
 check('I15', 'Espaço ativa o botão focado sem ir para o MSX', powerAfterKeyboardClick !== powerBeforeKeyboardClick)
 await page.keyboard.press('Space')
+
+// Clique de mouse foca o botão no Chrome; a digitação seguinte precisa ir para o MSX,
+// e o espaço de uma linha BASIC não pode desligar a máquina pelo botão focado.
+await page.evaluate(() => { document.activeElement?.blur?.(); window.__msx.interactions.setPower(false) })
+await page.click('.hud__btn--primary')
+await page.waitForFunction(() => window.__msx.interactions.screenRunning === true, null, { timeout: ANIMATION_TIMEOUT })
+await page.evaluate(() => {
+  const screen = window.__msx.interactions.screen
+  const original = screen.sendKey
+  window.__typedAfterClick = []
+  screen.sendKey = function (code, down) { window.__typedAfterClick.push([code, down]); return original.call(this, code, down) }
+  window.__restoreTyped = () => { screen.sendKey = original }
+})
+await page.keyboard.type('1 P', { delay: 120 })
+await page.waitForTimeout(800)
+const typedAfterClick = await page.evaluate(() => {
+  window.__restoreTyped()
+  const downs = window.__typedAfterClick.filter(([, down]) => down).map(([code]) => code)
+  return { power: window.__msx.interactions.getState().power.on, downs }
+})
+check('I25', 'clique no botão do HUD não engole a digitação do MSX',
+  typedAfterClick.power === true && ['Digit1', 'Space', 'KeyP'].every((code) => typedAfterClick.downs.includes(code)),
+  JSON.stringify(typedAfterClick))
+
+// Foco de teclado num botão (Tab) mantém Espaço/Enter no botão, mas letras e dígitos
+// seguem para o MSX — sem isso quem navega só por teclado não volta a digitar BASIC.
+await page.locator('.hud__btn--primary').focus()
+await page.evaluate(() => {
+  const screen = window.__msx.interactions.screen
+  const original = screen.sendKey
+  window.__typedOnFocus = []
+  screen.sendKey = function (code, down) { window.__typedOnFocus.push([code, down]); return original.call(this, code, down) }
+  window.__restoreTypedOnFocus = () => { screen.sendKey = original }
+})
+const powerBeforeFocusedTyping = await page.evaluate(() => window.__msx.interactions.getState().power.on)
+await page.keyboard.press('KeyP', { delay: 120 })
+await page.keyboard.press('Digit2', { delay: 120 })
+await page.waitForTimeout(800)
+const typedOnFocus = await page.evaluate(() => {
+  window.__restoreTypedOnFocus()
+  return {
+    power: window.__msx.interactions.getState().power.on,
+    downs: window.__typedOnFocus.filter(([, down]) => down).map(([code]) => code),
+    focused: document.activeElement?.classList.contains('hud__btn--primary') ?? false,
+  }
+})
+check('I33', 'letras com foco de teclado num botão ainda chegam ao MSX',
+  typedOnFocus.power === powerBeforeFocusedTyping && typedOnFocus.focused &&
+    ['KeyP', 'Digit2'].every((code) => typedOnFocus.downs.includes(code)),
+  JSON.stringify(typedOnFocus))
+await page.evaluate(() => document.activeElement?.blur?.())
+
+// Alt+H esconde o console (inert); o resumo para leitor de tela não pode ir junto.
+const hiddenChromeAnnouncer = await page.evaluate(() => {
+  window.__msx.hud.setChromeVisible(false)
+  const sr = document.querySelector('.hud [role="status"]')
+  let blocked = sr === null ? 'ausente' : null
+  for (let node = sr; node && !blocked; node = node.parentElement) {
+    if (node.hasAttribute('inert')) blocked = 'inert'
+    else if (getComputedStyle(node).visibility === 'hidden') blocked = 'visibility'
+  }
+  window.__msx.hud.setChromeVisible(true)
+  return blocked
+})
+check('I27', 'Alt+H mantém a região viva acessível', hiddenChromeAnnouncer === null, String(hiddenChromeAnnouncer))
+
+// Desligado, a cena dorme depois da animação; a sombra de contato da mesa precisa
+// acompanhar o cartucho que saiu ou voltou sem esperar o ciclo de 240 quadros.
+const contacts = await page.evaluate(async ({ animationTimeout }) => {
+  const { engine, interactions: itx } = window.__msx
+  const desk = engine.modules.find((module) => module.name === 'Desk')
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  const until = async (predicate, label) => {
+    const deadline = performance.now() + animationTimeout
+    while (!predicate()) {
+      if (performance.now() > deadline) throw new Error(`Timed out: ${label}`)
+      await wait(50)
+    }
+  }
+  const rects = () => desk.uniforms.uContactRect.value
+    .slice(0, desk.uniforms.uContactCount.value)
+    .map((v) => [v.x, v.y, v.z, v.w].map((n) => n.toFixed(4)).join(',')).join(' ')
+  const settle = async () => {
+    await wait(1200)
+    const live = rects()
+    desk.invalidateContacts()
+    return { live, truth: rects() }
+  }
+  for (const slot of ['A', 'B']) itx.ejectCartridge(slot)
+  await until(() => [...itx.slots.values()].every((rig) => rig.phase === 'vazio'), 'slots empty for contacts')
+  itx.setPower(false)
+  await until(() => itx.getState().power.warmth === 0, 'tube off for contacts')
+  await wait(500)
+  desk.frame = 9 // privado em TS: afasta a releitura periódica de 240 quadros
+  itx.insertCartridge('A')
+  await until(() => itx.slots.get('A').phase === 'inserido', 'contact insert seated')
+  const inserted = await settle()
+  desk.frame = 9
+  itx.ejectCartridge('A')
+  await until(() => itx.slots.get('A').phase === 'vazio', 'contact eject landed')
+  const ejected = await settle()
+  return { inserted, ejected }
+}, { animationTimeout: ANIMATION_TIMEOUT })
+check('I28', 'sombra de contato acompanha o cartucho com a cena parada',
+  contacts.inserted.live === contacts.inserted.truth && contacts.ejected.live === contacts.ejected.truth &&
+    contacts.inserted.truth !== contacts.ejected.truth,
+  JSON.stringify({ insertStale: contacts.inserted.live !== contacts.inserted.truth, ejectStale: contacts.ejected.live !== contacts.ejected.truth }))
+
+// Degrau sem mudança de teto de resolução não pode redimensionar: o resize apagava o
+// piso de cadência da sessão, e a escada seguinte media contra a própria janela ruim.
+const adaptiveResizes = await page.evaluate(() => {
+  const { engine, adaptiveQuality: aq } = window.__msx
+  if (aq === null) return null
+  const startTier = aq.tier
+  const wasLocked = aq.locked
+  let resizes = 0
+  const counter = () => { resizes += 1 }
+  engine.onResize(counter) // sem unsubscribe público: o finally remove do array privado
+  const step = (tier) => { resizes = 0; aq.lock(tier); return resizes }
+  try {
+    step(0)
+    return { toOne: step(1), toTwo: step(2), toThree: step(3), backToZero: step(0) }
+  } finally {
+    engine.resizeCallbacks.splice(engine.resizeCallbacks.indexOf(counter), 1)
+    aq.lock(startTier)
+    if (!wasLocked) aq.unlock()
+  }
+})
+check('I29', 'degrau adaptativo só redimensiona quando o teto muda',
+  adaptiveResizes !== null && adaptiveResizes.toOne === 0 && adaptiveResizes.toTwo === 0 &&
+    adaptiveResizes.toThree > 0 && adaptiveResizes.backToZero > 0,
+  JSON.stringify(adaptiveResizes))
 
 // Corridas de cartucho, ROM local e modificadores: cada caso falhava no código anterior.
 const lifecycle = await page.evaluate(async ({ offline, animationTimeout, webMsxUrl }) => {
@@ -689,6 +873,42 @@ const romNote = await page.evaluate(() => {
 check('I20', 'recusa de ROM grande persiste e chega ao leitor de tela',
   /2 MB/.test(romNote.first) && romNote.afterPublish === romNote.first && romNote.announced.startsWith(romNote.first),
   JSON.stringify(romNote))
+
+// Os height fields 1024² só alimentam as duas superfícies do pré-aquecimento; retidos,
+// eram ~24 MiB de heap pela sessão inteira.
+const retainedFields = await page.evaluate(() => window.__msx.retainedFieldBytes())
+check('I30', 'campos intermediários das texturas liberados após o boot', retainedFields === 0, `${retainedFields} bytes`)
+
+// Sem WebGL2 a única saída é o texto do véu de boot: precisa de contraste AA e ser
+// anunciado. A página descartável nega o contexto antes do bootstrap.
+const noWebGl = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+await noWebGl.addInitScript(() => {
+  const original = HTMLCanvasElement.prototype.getContext
+  HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+    return type === 'webgl2' ? null : original.call(this, type, ...rest)
+  }
+})
+await noWebGl.goto(targetUrl(), { waitUntil: 'networkidle' })
+const bootMessage = await noWebGl.evaluate(() => {
+  const paragraph = document.querySelector('#boot p')
+  const veil = document.getElementById('boot')
+  const rgb = (value) => value.match(/[\d.]+/g).slice(0, 3).map(Number)
+  const luminance = ([r, g, b]) => {
+    const channel = (c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+  }
+  const fg = luminance(rgb(getComputedStyle(paragraph).color))
+  const bg = luminance(rgb(getComputedStyle(veil).backgroundColor))
+  return {
+    text: paragraph.textContent,
+    role: paragraph.getAttribute('role'),
+    contrast: Number(((Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05)).toFixed(2)),
+  }
+})
+await noWebGl.close()
+check('I31', 'falta de WebGL2 aparece com contraste AA e é anunciada',
+  /WebGL2/.test(bootMessage.text) && bootMessage.role === 'alert' && bootMessage.contrast >= 4.5,
+  JSON.stringify(bootMessage))
 
 // Contexto WebGL restaurado recria alvos vazios; o IBL precisa ser regenerado. Com a
 // intensidade calibrada (0,11) a perda é sutil, então a sonda amplia o IBL; o controle

@@ -57,6 +57,20 @@ if (process.env.MSX_EXPECTED_VERSION) {
   expect('versão publicada', version === process.env.MSX_EXPECTED_VERSION, version)
 }
 
+// Sem ícone declarado, navegadores pedem /favicon.ico e recebem o shell HTML (fallback
+// de SPA) — ou um 404 no Vite, que vira erro de console no Chrome completo.
+const icon = await page.evaluate(async () => {
+  const href = document.querySelector('link[rel="icon"]')?.href
+  if (!href) return { href: null }
+  const res = await fetch(href, { cache: 'no-store' })
+  return { href, status: res.status, type: res.headers.get('content-type') }
+})
+expect(
+  'ícone declarado e servido como imagem',
+  icon.status === 200 && /^image\//.test(icon.type ?? ''),
+  JSON.stringify(icon),
+)
+
 await page.waitForFunction(() => window.__msxReady === true, null, { timeout: 60_000 })
 
 // Duas fases, porque a rota segue o cartucho (SPEC §9): slots vazios abrem o BASIC

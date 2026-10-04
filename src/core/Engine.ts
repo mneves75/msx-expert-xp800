@@ -73,7 +73,12 @@ function isLightWithShadow(o: THREE.Object3D): o is THREE.Object3D & { shadow: T
 export function isWebGL2Available(): boolean {
   try {
     const canvas = document.createElement('canvas')
-    return canvas.getContext('webgl2') !== null
+    const gl = canvas.getContext('webgl2')
+    if (gl === null) return false
+    // Solta o contexto já: navegadores limitam contextos vivos e, no limite, descartam
+    // o mais antigo — que pode ser o da cena.
+    gl.getExtension('WEBGL_lose_context')?.loseContext()
+    return true
   } catch {
     return false
   }

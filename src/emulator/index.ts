@@ -80,8 +80,8 @@ function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal | undefined):
  * recusada, canvas contaminado — cai no renderer procedural sem baixar o padrão
  * visual. Quem venceu fica exposto em {@link ScreenPipeline.kind}.
  *
- * O download de 1,5 MB só acontece em `start()`, isto é, ao ligar a máquina —
- * nunca no carregamento da página.
+ * O download de 1,5 MB só acontece quando há cartucho a rodar (`webMsxNeedsCartridge`):
+ * nunca no carregamento da página nem só por ligar a máquina (SPEC §9).
  */
 
 interface ScreenRouteOptions extends WebMsxBridgeOptions {
