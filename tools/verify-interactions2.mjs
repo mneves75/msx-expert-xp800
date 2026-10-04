@@ -805,10 +805,20 @@ const adaptiveResizes = await page.evaluate(() => {
     const base = { toOne: step(1), toTwo: step(2), toThree: step(3), backToZero: step(0) }
     // DPR já no piso de 0,25 (renderer por software): os degraus 3 e 4 pedem tetos
     // diferentes que o Engine prende no mesmo 0,25 — não há resolução a mudar.
-    const restoreCeiling = engine.withPixelRatioCeiling(0.25)
+    const restoreFirst = engine.withPixelRatioCeiling(0.25)
+    let restored = false
+    const restoreCeiling = () => { if (!restored) { restored = true; restoreFirst() } }
     try {
       step(0)
-      return { ...base, clampedToThree: step(3), clampedToFour: step(4), clampedBack: step(0) }
+      const clamped = { clampedToThree: step(3), clampedToFour: step(4), clampedBack: step(0) }
+      restoreCeiling()
+      // Já degradado (teto 0,75) quando o piso entra: o degrau 4 muda o teto pedido,
+      // mas o DPR efetivo continua 0,25 — nada a redimensionar.
+      step(3)
+      const restoreAgain = engine.withPixelRatioCeiling(0.25)
+      const ceilingThenFour = step(4)
+      restoreAgain()
+      return { ...base, ...clamped, ceilingThenFour }
     } finally { restoreCeiling() }
   } finally {
     engine.resizeCallbacks.splice(engine.resizeCallbacks.indexOf(counter), 1)
@@ -818,7 +828,8 @@ const adaptiveResizes = await page.evaluate(() => {
 })
 check('I29', 'degrau adaptativo só redimensiona quando o teto muda',
   adaptiveResizes !== null && adaptiveResizes.toOne === 0 && adaptiveResizes.toTwo === 0 &&
-    adaptiveResizes.toThree > 0 && adaptiveResizes.backToZero > 0 && adaptiveResizes.clampedToFour === 0,
+    adaptiveResizes.toThree > 0 && adaptiveResizes.backToZero > 0 && adaptiveResizes.clampedToFour === 0 &&
+    adaptiveResizes.ceilingThenFour === 0,
   JSON.stringify(adaptiveResizes))
 
 // Corridas de cartucho, ROM local e modificadores: cada caso falhava no código anterior.

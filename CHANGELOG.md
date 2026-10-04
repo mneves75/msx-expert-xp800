@@ -11,7 +11,7 @@ Notable changes are documented here. The format follows [Keep a Changelog](https
 - Stop HUD buttons from swallowing MSX typing: a mouse click no longer leaves any HUD control focused, and a keyboard-focused button keeps only Space, Enter, Tab and Escape, so letters and digits still reach the machine.
 - Long unbroken notes (such as ROM file names) wrap inside the HUD instead of running off screen.
 - Refresh the desk's contact shadows while shadow casters move, so a cartridge inserted or ejected with the machine off no longer leaves a dark footprint behind.
-- Adaptive quality no longer resizes the renderer on steps that keep the effective resolution cap (including two steps clamped to the same floor), which erased its best-cadence reference.
+- Adaptive quality no longer resizes the renderer on steps that leave the effective pixel ratio unchanged (steps 0–2, or steps held by a lower ceiling), which erased its best-cadence reference.
 - Release about 24 MiB of intermediate texture height fields once the surface maps are built.
 - Raise the boot message to 6.2:1 contrast and announce it; the WebGL2 failure uses an alert role.
 - Release the WebGL2 support-probe context immediately instead of holding a second live context.

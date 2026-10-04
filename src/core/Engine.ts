@@ -333,10 +333,13 @@ export class Engine {
    */
   setAdaptivePixelRatioCap(limit: number | null): void {
     const next = limit === null ? null : Math.max(0.25, limit)
-    // Mesmo teto efetivo (degraus 0–2, ou 3→4 já presos no piso) não redimensiona: o
-    // resize dispara callbacks que zeram a referência de cadência do AdaptiveQuality.
     if (next === this.adaptivePixelRatioCap) return
+    // Só um DPR efetivo novo redimensiona. Degraus 0–2, ou 3→4 sob um teto mais baixo
+    // (piso de 0,25, aquecimento), não mudam nada na tela — e o resize dispara callbacks
+    // que zeram a referência de cadência do AdaptiveQuality.
+    const before = this.viewportSize().pixelRatio
     this.adaptivePixelRatioCap = next
+    if (this.viewportSize().pixelRatio === before) return
     this.handleResize()
   }
 
