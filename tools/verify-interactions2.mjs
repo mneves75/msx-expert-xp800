@@ -615,6 +615,33 @@ const longNote = await mobilePage.evaluate(async () => {
 })
 check('I26b', 'aviso longo sem espaços quebra dentro do toast',
   longNote.overflowX <= 1 && longNote.right <= longNote.width, JSON.stringify(longNote))
+// Teclado físico no mobile: Alt+P abre a folha; Esc fecha e devolve o teclado ao MSX
+// (não ao botão "Painel", onde o Espaço seguinte reabriria a folha).
+await mobilePage.evaluate(() => { document.activeElement?.blur?.(); window.__msx.interactions.setPower(true) })
+await mobilePage.waitForFunction(() => window.__msx.interactions.screenRunning === true, null, { timeout: ANIMATION_TIMEOUT })
+await mobilePage.keyboard.press('Alt+KeyP')
+await mobilePage.waitForFunction(() => document.querySelector('.hud')?.getAttribute('data-sheet') === 'open', null, { timeout: 5000 })
+await mobilePage.keyboard.press('Escape')
+await mobilePage.evaluate(() => {
+  const screen = window.__msx.interactions.screen
+  const original = screen.sendKey
+  window.__mobileTyped = []
+  screen.sendKey = function (code, down) { window.__mobileTyped.push([code, down]); return original.call(this, code, down) }
+  window.__restoreMobileTyped = () => { screen.sendKey = original }
+})
+await mobilePage.keyboard.press('Space', { delay: 120 })
+await mobilePage.waitForTimeout(600)
+const mobileShortcutExit = await mobilePage.evaluate(() => {
+  window.__restoreMobileTyped()
+  return {
+    sheet: document.querySelector('.hud')?.getAttribute('data-sheet'),
+    focusOnBody: document.activeElement === document.body,
+    spaceReachedMsx: window.__mobileTyped.some(([code, down]) => code === 'Space' && down),
+  }
+})
+check('I35', 'Esc após Alt+P na folha mobile devolve o teclado ao MSX',
+  mobileShortcutExit.sheet === 'closed' && mobileShortcutExit.focusOnBody && mobileShortcutExit.spaceReachedMsx,
+  JSON.stringify(mobileShortcutExit))
 check('I26', 'folha fechada mostra e anuncia avisos sem cobrir o botão',
   closedSheetNote.announcer === null && closedSheetNote.announced && closedSheetNote.visible &&
     closedSheetNote.inViewport && !closedSheetNote.overlapsToggle,

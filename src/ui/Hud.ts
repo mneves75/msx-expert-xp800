@@ -175,6 +175,11 @@ class Hud implements HudHandle {
   private readonly unsubscribe: () => void
   private disposed = false
   private sheetOpen = false
+  /**
+   * Aberta por Alt+P, a folha devolve o foco a quem o tinha (em geral o `body`, ou seja,
+   * o MSX). Aberta pelo botão "Painel", o foco volta ao lançador, como pede o WCAG.
+   */
+  private sheetReturnFocus: Element | null = null
   private sheetDrag: { readonly pointerId: number; readonly x: number; readonly y: number } | null =
     null
   private chromeVisible = true
@@ -503,18 +508,33 @@ class Hud implements HudHandle {
    */
   private focusPanel(): void {
     if (!this.chromeVisible) this.setChromeVisible(true)
-    if (this.isMobile) this.onSheetOpen()
-    else this.powerButton.focus()
+    if (this.isMobile) {
+      const previous = document.activeElement
+      this.onSheetOpen()
+      this.sheetReturnFocus = previous ?? document.body
+    } else {
+      this.powerButton.focus()
+    }
   }
 
   private readonly onSheetOpen = (): void => {
+    this.sheetReturnFocus = null
     this.setSheet(true)
     this.sheetClose.focus()
   }
 
   private readonly onSheetClose = (): void => {
+    const back = this.sheetReturnFocus
+    this.sheetReturnFocus = null
     this.setSheet(false)
-    this.sheetToggle.focus()
+    if (back === null) {
+      this.sheetToggle.focus()
+    } else if (back instanceof HTMLElement && back !== document.body && back.isConnected && !this.console.contains(back)) {
+      back.focus()
+    } else if (document.activeElement instanceof HTMLElement) {
+      // O foco ficou na folha que acabou de virar inert: solta para o MSX.
+      document.activeElement.blur()
+    }
   }
 
   private readonly onSheetDragStart = (event: PointerEvent): void => {
