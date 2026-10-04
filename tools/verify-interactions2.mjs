@@ -730,8 +730,14 @@ const afterEscape = await page.evaluate(() => {
   window.__restoreEscape()
   return window.__typedAfterEscape.some(([code, down]) => code === 'KeyQ' && down)
 })
+// Um atalho que ninguém encontra não serve a quem depende dele.
+const panelShortcutListed = await page.evaluate(() => ({
+  listed: [...document.querySelectorAll('.hud__shortcuts dt')].some((dt) => /P$/.test(dt.textContent?.trim() ?? '')),
+  aria: document.querySelector('.hud__btn--primary')?.getAttribute('aria-keyshortcuts')?.split(' ').includes('Alt+P') ?? false,
+}))
 check('I34', 'Alt+P leva o teclado ao painel e Esc devolve ao MSX',
-  panelEntry && tabMoved && escaped && afterEscape, JSON.stringify({ panelEntry, tabMoved, escaped, afterEscape }))
+  panelEntry && tabMoved && escaped && afterEscape && panelShortcutListed.listed && panelShortcutListed.aria,
+  JSON.stringify({ panelEntry, tabMoved, escaped, afterEscape, ...panelShortcutListed }))
 
 // Alt+H esconde o console (inert); o resumo para leitor de tela não pode ir junto.
 const hiddenChromeAnnouncer = await page.evaluate(() => {

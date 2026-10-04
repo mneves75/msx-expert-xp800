@@ -283,6 +283,8 @@ class Hud implements HudHandle {
     const powerStack = el('div', 'hud__stack')
     this.powerButton = actionButton(TXT.turnOn, `${this.alt} L`)
     this.powerButton.classList.add('hud__btn--primary')
+    // Alt+L aciona; Alt+P leva o foco do teclado até aqui (entrada do painel).
+    this.powerButton.setAttribute('aria-keyshortcuts', 'Alt+L Alt+P')
     const resetButton = actionButton(TXT.reset, `${this.alt} R`)
     resetButton.title = TXT.resetHint
     resetButton.setAttribute('aria-label', `${TXT.reset} — ${TXT.resetHint}`)
@@ -367,6 +369,7 @@ class Hud implements HudHandle {
       [`${this.alt} X`, TXT.xray],
       [`${this.alt} G`, 'Girar'],
       [`${this.alt} H`, 'Ocultar'],
+      [`${this.alt} P`, 'Ir ao painel (Esc volta)'],
     ]
     for (const pair of pairs) {
       shortcuts.appendChild(el('dt', undefined, pair[0]))
@@ -395,6 +398,7 @@ class Hud implements HudHandle {
     this.sheetToggle.setAttribute('aria-expanded', 'false')
     this.sheetToggle.setAttribute('aria-controls', 'hud-console')
     this.sheetToggle.setAttribute('aria-label', TXT.sheetAriaOpen)
+    this.sheetToggle.setAttribute('aria-keyshortcuts', 'Alt+P')
     this.sheetToggle.appendChild(el('span', undefined, TXT.sheetOpen))
     this.sheetToggleState = el('span', 'hud__sheet-toggle-state', TXT.powerOff)
     this.sheetToggle.appendChild(this.sheetToggleState)

@@ -37,6 +37,23 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED | REJECTED.
 - Change graphite albedo or global exposure to close the open lighting mismatch:
   rejected pending confirmation that the calibration ROIs select the intended surfaces.
 
+### v0.2.3 audit (2026-10-04) — deferred or rejected
+
+- Late `wmsx.js` arrival after an aborted or timed-out download (BUG-04): a held-route
+  probe in Chrome showed one request and one script after eject/reinsert, so the
+  double download does not reproduce. Double evaluation on a late arrival remains
+  unverified.
+- `CameraRig.setPose` accepting non-finite input (harness/console only), the CRT noise
+  hash's float precision after long sessions, the zero-intensity LED point light's
+  shading cost (needs `profile.mjs` first), module-level singletons in CRT/Cartridge,
+  and forwarding an eject for a slot WebMSX never loaded: deferred, no user-facing
+  defect reproduced.
+- `Engine.dispose()` → `forceContextLoss()`: HMR-only, no cheap failing check; deferred.
+- `AdaptiveQuality` pins `resolutionBase` at the transition. A tier entered under a
+  temporary pixel-ratio ceiling would keep the reduced ratio, but both production
+  ceilings end before the controller exists or within one synchronous frame, so the
+  path is unreachable outside the harness.
+
 ## Verification caveats
 
 - The repository's pnpm wrapper could not open its external v11 store and then proposed
