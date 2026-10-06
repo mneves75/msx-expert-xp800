@@ -74,3 +74,16 @@ test('an explicit target URL beats an exported MSX_URL', () => {
     else process.env.MSX_URL = previous
   }
 })
+
+test('the built page names the commit it was built from', () => {
+  // A static page has no /health endpoint, so the served commit travels in the HTML.
+  // Run after `pnpm build`; scripts/release.sh exports RELEASE_COMMIT for the same build.
+  const html = readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8')
+  const meta = (name) => html.match(new RegExp(`<meta[^>]*name="${name}"[^>]*content="([^"]*)"`))?.[1]
+  const commit = meta('app-commit')
+  assert.match(commit ?? '', /^[0-9a-f]{40}(-dirty)?$/)
+  const expected = process.env.RELEASE_COMMIT?.trim()
+  if (expected) assert.equal(commit, expected)
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(meta('application-version'), version)
+})

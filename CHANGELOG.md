@@ -2,6 +2,19 @@
 
 Notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [0.2.4] — 2026-10-05
+
+### Added
+
+- `scripts/release.sh <staging|production>` runs a whole release: it builds the pushed commit in a clean checkout, runs the gates, deploys, proves the deployment live and only then pushes the `v<version>-betaN` or `v<version>` tag. Production promotes only the commit staging is serving, and a failed proof leaves no tag and prints the rollback command.
+- `scripts/verify-live.sh <staging|production>` reads a deployment and checks the served commit and version, the real page, the entry script, the security headers and a refused request.
+- `pnpm test:release` proves the release guards against a fake Wrangler, with no network or Cloudflare login.
+- The built page names its commit in `<meta name="app-commit">`, so a deployment shows which commit it serves.
+
+### Changed
+
+- `pnpm deploy` and `pnpm deploy:staging` stay as manual deploys; a release goes through `scripts/release.sh`.
+
 ## [0.2.3] — 2026-10-04
 
 ### Fixed

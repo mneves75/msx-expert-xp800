@@ -65,8 +65,11 @@ pnpm verify       # ast-grep + TypeScript
 pnpm verify:all   # build + offline browser checks on an owned free port
 pnpm verify:online # real CDN emulator and game checks
 pnpm build        # production build in dist/
-pnpm deploy:staging # build + isolated staging Worker
-pnpm deploy       # build + production Worker
+pnpm test:release # guard tests of the release scripts (fake Wrangler, no network)
+scripts/release.sh staging     # gates, deploy, live proof, then the vX.Y.Z-betaN tag
+scripts/release.sh production  # promotes the commit staging serves, then the vX.Y.Z tag
+pnpm deploy:staging # manual build + staging Worker: no gates, no live proof, no tag
+pnpm deploy       # manual build + production Worker: no gates, no live proof, no tag
 ```
 
 ## Verification
@@ -106,10 +109,12 @@ so a fork deploys to any static host (Cloudflare, Netlify, GitHub Pages, S3, ngi
 - **Cloudflare Workers Static Assets** is the zero-config path: the included
   [`wrangler.jsonc`](wrangler.jsonc) carries no account-specific values, so
   `pnpm deploy` publishes to whichever Cloudflare account your Wrangler is logged into.
-- **Staging:** `pnpm deploy:staging` targets the separate
-  `msx-expert-xp800-staging` Worker; run `tools/verify-prod.mjs` against its URL before
-  promoting the build. The HTML's `application-version` meta tag identifies the package
-  version; compare asset hashes before promoting the same candidate to production.
+- **Staging:** a release goes through `scripts/release.sh staging`, which deploys to the
+  separate `msx-expert-xp800-staging` Worker, proves the deployment live with
+  `scripts/verify-live.sh staging` and tags `vX.Y.Z-betaN`; `pnpm deploy:staging` only
+  deploys. Run `tools/verify-prod.mjs` against the staging URL before promoting. The HTML's
+  `application-version` and `app-commit` meta tags identify the package version and the
+  commit; `scripts/release.sh production` refuses any commit staging is not serving.
 - **Other hosts:** serve `dist/` with SPA fallback and replicate the security and cache
   headers from [`public/_headers`](public/_headers) (Cloudflare and Netlify read that
   file natively; elsewhere, port the CSP to your host's header mechanism).

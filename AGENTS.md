@@ -150,13 +150,26 @@ Keep keycaps instanced. These targets guide design but are not yet CI-enforced.
 ## Releases
 
 `package.json` owns the version; `CHANGELOG.md` uses US English and Keep a Changelog.
-Releases are tagged `v<semver>` and published as GitHub Releases. Staging uses
-`pnpm deploy:staging`; production uses `pnpm deploy`, both under Node. Before deploying,
-run `pnpm build`, the applicable verification above, and scan fresh `dist/` for secrets
-and local paths. `MSX_EXPECTED_VERSION=<version> node tools/verify-prod.mjs <url>` checks
-the generated HTML's `application-version`; compare it and asset
-hashes with the candidate before promotion. Staging tags use `v<semver>-betaN`; production
-tags use `v<semver>`. Deploy only with user authorization.
+Releases are tagged `v<semver>` and published as GitHub Releases. A release goes through
+two entry points, in this order: the commit is pushed to `main`; `scripts/release.sh staging`
+builds that commit in a clean checkout, runs the gates (audit, release-guard tests,
+`pnpm verify:all`, build, `dist/` leakage scan), deploys it, proves it live with
+`scripts/verify-live.sh staging`, and only then pushes `v<semver>-betaN`;
+`scripts/release.sh production` promotes the commit staging serves the same way and pushes
+`v<semver>`. `--check` prints the plan and `--dry-run` stops before the deploy. One gate is
+skipped only with `--waive <gate>=<reason>`, which `release.json` records under the
+git-ignored `.scratch/release/`. Run both under Node; set `MSX_BROWSER_CHANNEL=chrome` where
+Playwright's headless shell is unusable. The served commit is
+`<meta name="app-commit">` (written by `vite.config.ts` from `RELEASE_COMMIT`), because the
+site has no `/health`; `verify-live.sh` reads it and refuses a `-dirty` or `unknown` build.
+
+`pnpm deploy:staging` and `pnpm deploy` remain for a manual deploy, but they run no gate or
+live proof and tag nothing: a release goes through `scripts/release.sh`.
+`MSX_EXPECTED_VERSION=<version> node tools/verify-prod.mjs <url>` still checks the generated
+HTML's `application-version`, the strict headers and the emulator under the CSP in a real
+browser; run it against staging after the release and compare asset hashes with the candidate
+before promotion. Staging tags use `v<semver>-betaN`; production tags use `v<semver>`. Deploy
+only with user authorization.
 
 ## Package management
 

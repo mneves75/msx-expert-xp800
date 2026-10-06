@@ -1,12 +1,34 @@
 import { defineConfig } from 'vite'
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
 
+/**
+ * The commit this build came from. scripts/release.sh exports RELEASE_COMMIT; any other
+ * build asks Git, and a tree with tracked edits gets `-dirty` so scripts/verify-live.sh
+ * can never mistake it for a pushed commit.
+ */
+function appCommit(): string {
+  const fromRelease = process.env['RELEASE_COMMIT']?.trim()
+  if (fromRelease) return fromRelease
+  const git = (...args: string[]): string =>
+    execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  try {
+    const head = git('rev-parse', 'HEAD')
+    return git('status', '--porcelain', '--untracked-files=no') === '' ? head : `${head}-dirty`
+  } catch {
+    return 'unknown'
+  }
+}
+
 export default defineConfig({
   plugins: [{
     name: 'build-version',
-    transformIndexHtml: () => [{ tag: 'meta', attrs: { name: 'application-version', content: version }, injectTo: 'head' }],
+    transformIndexHtml: () => [
+      { tag: 'meta', attrs: { name: 'application-version', content: version }, injectTo: 'head' },
+      { tag: 'meta', attrs: { name: 'app-commit', content: appCommit() }, injectTo: 'head' },
+    ],
   }],
   build: {
     target: 'es2022',
