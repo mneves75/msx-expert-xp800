@@ -17,6 +17,8 @@
 
   "env": {
     "staging": {
+      "preview_urls": false,
+      "workers_dev": false,
       "name": "msx-expert-xp800-staging"
     }
   }
