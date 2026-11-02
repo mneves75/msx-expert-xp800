@@ -19,6 +19,7 @@
     "staging": {
       "preview_urls": false,
       "workers_dev": false,
+      "triggers": { "crons": [] },
       "name": "msx-expert-xp800-staging"
     }
   }
