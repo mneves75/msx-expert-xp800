@@ -2,6 +2,12 @@
 
 Notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Agent enforcement in `.claude/settings.json`: agents cannot edit a vendored WebMSX script (`wmsx*.js`) or the lockfile, or run npm, Yarn or Bun installs; a deploy or `scripts/release.sh` asks first; a Stop gate runs `pnpm verify:all` when the tree changed. No instruction lines needed correcting.
+
 ## [0.2.4] — 2026-10-05
 
 ### Added
