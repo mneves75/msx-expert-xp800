@@ -109,7 +109,7 @@ Separate offline fallback proof from online integration proof: a skipped CDN che
 not a pass. Finish with the result, evidence and actual limitations in concise prose.
 Model selection belongs to the agent runtime, not this repository. This workflow follows
 the [Fable 5.1 guidance](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1)
-and [GPT-6 Astra guidance](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra),
+and [GPT-6.2 Astra guidance](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6.2-astra),
 checked 2026-09-05.
 
 ## Verification — pick the tool that matches the question
